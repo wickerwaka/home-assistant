@@ -2,7 +2,7 @@
 """Constants used by Home Assistant components."""
 MAJOR_VERSION = 0
 MINOR_VERSION = 56
-PATCH_VERSION = '0.dev0'
+PATCH_VERSION = '1'
 __short_version__ = '{}.{}'.format(MAJOR_VERSION, MINOR_VERSION)
 __version__ = '{}.{}'.format(__short_version__, PATCH_VERSION)
 REQUIRED_PYTHON_VER = (3, 4, 2)
@@ -113,6 +113,7 @@ CONF_ID = 'id'
 CONF_IP_ADDRESS = 'ip_address'
 CONF_LATITUDE = 'latitude'
 CONF_LONGITUDE = 'longitude'
+CONF_LIGHTS = 'lights'
 CONF_MAC = 'mac'
 CONF_METHOD = 'method'
 CONF_MINIMUM = 'minimum'
@@ -278,6 +279,9 @@ MASS_KILOGRAMS = 'kg'  # type: str
 
 MASS_OUNCES = 'oz'  # type: str
 MASS_POUNDS = 'lb'  # type: str
+
+# UV Index units
+UNIT_UV_INDEX = 'UV index'  # type: str
 
 # Contains the information that is discovered
 ATTR_DISCOVERED = 'discovered'
