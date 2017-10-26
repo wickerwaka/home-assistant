@@ -13,7 +13,6 @@ from homeassistant.components.scene import Scene, DOMAIN
 from homeassistant.const import CONF_PLATFORM
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import async_generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 REQUIREMENTS = ['aiopvapi==1.4']
@@ -65,8 +64,6 @@ class PowerViewScene(Scene):
         self._sync_room_data(room_data, scene_data)
         self._name = scene_data[SCENE_NAME]
         self._scene_id = scene_data[SCENE_ID]
-        self.entity_id = async_generate_entity_id(
-            ENTITY_ID_FORMAT, str(scene_data[SCENE_ID]), hass=hass)
 
     def _sync_room_data(self, room_data, scene_data):
         """Sync the room data."""
