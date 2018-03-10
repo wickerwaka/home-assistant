@@ -4,28 +4,29 @@ Support for functionality to have conversations with Home Assistant.
 For more details about this component, please refer to the documentation at
 https://home-assistant.io/components/conversation/
 """
-import asyncio
 import logging
 import re
-import warnings
 
 import voluptuous as vol
 
 from homeassistant import core
-from homeassistant.loader import bind_hass
-from homeassistant.const import (
-    ATTR_ENTITY_ID, SERVICE_TURN_OFF, SERVICE_TURN_ON, HTTP_BAD_REQUEST)
-from homeassistant.helpers import intent, config_validation as cv
 from homeassistant.components import http
+from homeassistant.components.http.data_validator import (
+    RequestDataValidator)
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import intent
 
+from homeassistant.loader import bind_hass
 
-REQUIREMENTS = ['fuzzywuzzy==0.15.1']
-DEPENDENCIES = ['http']
+_LOGGER = logging.getLogger(__name__)
 
 ATTR_TEXT = 'text'
+
+DEPENDENCIES = ['http']
 DOMAIN = 'conversation'
 
 REGEX_TURN_COMMAND = re.compile(r'turn (?P<name>(?: |\w)+) (?P<command>\w+)')
+REGEX_TYPE = type(re.compile(''))
 
 SERVICE_PROCESS = 'process'
 
@@ -39,13 +40,11 @@ CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Schema({
     })
 })}, extra=vol.ALLOW_EXTRA)
 
-_LOGGER = logging.getLogger(__name__)
-
 
 @core.callback
 @bind_hass
 def async_register(hass, intent_type, utterances):
-    """Register an intent.
+    """Register utterances and any custom intents.
 
     Registrations don't require conversations to be loaded. They will become
     active once the conversation component is loaded.
@@ -60,14 +59,15 @@ def async_register(hass, intent_type, utterances):
     if conf is None:
         conf = intents[intent_type] = []
 
-    conf.extend(_create_matcher(utterance) for utterance in utterances)
+    for utterance in utterances:
+        if isinstance(utterance, REGEX_TYPE):
+            conf.append(utterance)
+        else:
+            conf.append(_create_matcher(utterance))
 
 
-@asyncio.coroutine
-def async_setup(hass, config):
+async def async_setup(hass, config):
     """Register the process service."""
-    warnings.filterwarnings('ignore', module='fuzzywuzzy')
-
     config = config.get(DOMAIN, {})
     intents = hass.data.get(DOMAIN)
 
@@ -82,42 +82,73 @@ def async_setup(hass, config):
 
         conf.extend(_create_matcher(utterance) for utterance in utterances)
 
-    @asyncio.coroutine
-    def process(service):
+    async def process(service):
         """Parse text into commands."""
         text = service.data[ATTR_TEXT]
-        yield from _process(hass, text)
+        try:
+            await _process(hass, text)
+        except intent.IntentHandleError as err:
+            _LOGGER.error('Error processing %s: %s', text, err)
 
     hass.services.async_register(
         DOMAIN, SERVICE_PROCESS, process, schema=SERVICE_PROCESS_SCHEMA)
 
     hass.http.register_view(ConversationProcessView)
 
+    # We strip trailing 's' from name because our state matcher will fail
+    # if a letter is not there. By removing 's' we can match singular and
+    # plural names.
+
+    async_register(hass, intent.INTENT_TURN_ON, [
+        'Turn [the] [a] {name}[s] on',
+        'Turn on [the] [a] [an] {name}[s]',
+    ])
+    async_register(hass, intent.INTENT_TURN_OFF, [
+        'Turn [the] [a] [an] {name}[s] off',
+        'Turn off [the] [a] [an] {name}[s]',
+    ])
+    async_register(hass, intent.INTENT_TOGGLE, [
+        'Toggle [the] [a] [an] {name}[s]',
+        '[the] [a] [an] {name}[s] toggle',
+    ])
+
     return True
 
 
 def _create_matcher(utterance):
     """Create a regex that matches the utterance."""
-    parts = re.split(r'({\w+})', utterance)
+    # Split utterance into parts that are type: NORMAL, GROUP or OPTIONAL
+    # Pattern matches (GROUP|OPTIONAL): Change light to [the color] {name}
+    parts = re.split(r'({\w+}|\[[\w\s]+\] *)', utterance)
+    # Pattern to extract name from GROUP part. Matches {name}
     group_matcher = re.compile(r'{(\w+)}')
+    # Pattern to extract text from OPTIONAL part. Matches [the color]
+    optional_matcher = re.compile(r'\[([\w ]+)\] *')
 
     pattern = ['^']
-
     for part in parts:
-        match = group_matcher.match(part)
+        group_match = group_matcher.match(part)
+        optional_match = optional_matcher.match(part)
 
-        if match is None:
+        # Normal part
+        if group_match is None and optional_match is None:
             pattern.append(part)
             continue
 
-        pattern.append('(?P<{}>{})'.format(match.groups()[0], r'[\w ]+'))
+        # Group part
+        if group_match is not None:
+            pattern.append(
+                r'(?P<{}>[\w ]+?)\s*'.format(group_match.groups()[0]))
+
+        # Optional part
+        elif optional_match is not None:
+            pattern.append(r'(?:{} *)?'.format(optional_match.groups()[0]))
 
     pattern.append('$')
     return re.compile(''.join(pattern), re.I)
 
 
-@asyncio.coroutine
-def _process(hass, text):
+async def _process(hass, text):
     """Process a line of text."""
     intents = hass.data.get(DOMAIN, {})
 
@@ -128,48 +159,11 @@ def _process(hass, text):
             if not match:
                 continue
 
-            response = yield from intent.async_handle(
-                hass, DOMAIN, intent_type,
+            response = await hass.helpers.intent.async_handle(
+                DOMAIN, intent_type,
                 {key: {'value': value} for key, value
                  in match.groupdict().items()}, text)
             return response
-
-    from fuzzywuzzy import process as fuzzyExtract
-    text = text.lower()
-    match = REGEX_TURN_COMMAND.match(text)
-
-    if not match:
-        _LOGGER.error("Unable to process: %s", text)
-        return None
-
-    name, command = match.groups()
-    entities = {state.entity_id: state.name for state
-                in hass.states.async_all()}
-    entity_ids = fuzzyExtract.extractOne(
-        name, entities, score_cutoff=65)[2]
-
-    if not entity_ids:
-        _LOGGER.error(
-            "Could not find entity id %s from text %s", name, text)
-        return None
-
-    if command == 'on':
-        yield from hass.services.async_call(
-            core.DOMAIN, SERVICE_TURN_ON, {
-                ATTR_ENTITY_ID: entity_ids,
-            }, blocking=True)
-
-    elif command == 'off':
-        yield from hass.services.async_call(
-            core.DOMAIN, SERVICE_TURN_OFF, {
-                ATTR_ENTITY_ID: entity_ids,
-            }, blocking=True)
-
-    else:
-        _LOGGER.error('Got unsupported command %s from text %s',
-                      command, text)
-
-    return None
 
 
 class ConversationProcessView(http.HomeAssistantView):
@@ -178,23 +172,18 @@ class ConversationProcessView(http.HomeAssistantView):
     url = '/api/conversation/process'
     name = "api:conversation:process"
 
-    @asyncio.coroutine
-    def post(self, request):
+    @RequestDataValidator(vol.Schema({
+        vol.Required('text'): str,
+    }))
+    async def post(self, request, data):
         """Send a request for processing."""
         hass = request.app['hass']
+
         try:
-            data = yield from request.json()
-        except ValueError:
-            return self.json_message('Invalid JSON specified',
-                                     HTTP_BAD_REQUEST)
-
-        text = data.get('text')
-
-        if text is None:
-            return self.json_message('Missing "text" key in JSON.',
-                                     HTTP_BAD_REQUEST)
-
-        intent_result = yield from _process(hass, text)
+            intent_result = await _process(hass, data['text'])
+        except intent.IntentHandleError as err:
+            intent_result = intent.IntentResponse()
+            intent_result.async_set_speech(str(err))
 
         if intent_result is None:
             intent_result = intent.IntentResponse()

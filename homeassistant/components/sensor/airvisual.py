@@ -14,12 +14,11 @@ from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
     ATTR_ATTRIBUTION, ATTR_LATITUDE, ATTR_LONGITUDE, CONF_API_KEY,
     CONF_LATITUDE, CONF_LONGITUDE, CONF_MONITORED_CONDITIONS, CONF_STATE,
-    CONF_SHOW_ON_MAP)
+    CONF_SHOW_ON_MAP, CONF_RADIUS)
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
 
 REQUIREMENTS = ['pyairvisual==1.0.0']
-
 _LOGGER = getLogger(__name__)
 
 ATTR_CITY = 'city'
@@ -27,11 +26,9 @@ ATTR_COUNTRY = 'country'
 ATTR_POLLUTANT_SYMBOL = 'pollutant_symbol'
 ATTR_POLLUTANT_UNIT = 'pollutant_unit'
 ATTR_REGION = 'region'
-ATTR_TIMESTAMP = 'timestamp'
 
 CONF_CITY = 'city'
 CONF_COUNTRY = 'country'
-CONF_RADIUS = 'radius'
 CONF_ATTRIBUTION = "Data provided by AirVisual"
 
 MASS_PARTS_PER_MILLION = 'ppm'
@@ -39,6 +36,12 @@ MASS_PARTS_PER_BILLION = 'ppb'
 VOLUME_MICROGRAMS_PER_CUBIC_METER = 'µg/m3'
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=10)
+
+SENSOR_TYPES = [
+    ('AirPollutionLevelSensor', 'Air Pollution Level', 'mdi:scale'),
+    ('AirQualityIndexSensor', 'Air Quality Index', 'mdi:format-list-numbers'),
+    ('MainPollutantSensor', 'Main Pollutant', 'mdi:chemical-weapon'),
+]
 
 POLLUTANT_LEVEL_MAPPING = [
     {'label': 'Good', 'minimum': 0, 'maximum': 50},
@@ -59,11 +62,6 @@ POLLUTANT_MAPPING = {
 }
 
 SENSOR_LOCALES = {'cn': 'Chinese', 'us': 'U.S.'}
-SENSOR_TYPES = [
-    ('AirPollutionLevelSensor', 'Air Pollution Level', 'mdi:scale'),
-    ('AirQualityIndexSensor', 'Air Quality Index', 'mdi:format-list-numbers'),
-    ('MainPollutantSensor', 'Main Pollutant', 'mdi:chemical-weapon'),
-]
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_API_KEY): cv.string,
@@ -81,7 +79,13 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 def setup_platform(hass, config, add_devices, discovery_info=None):
     """Configure the platform and add the sensors."""
-    import pyairvisual as pav
+    from pyairvisual import Client
+
+    classes = {
+        'AirPollutionLevelSensor': AirPollutionLevelSensor,
+        'AirQualityIndexSensor': AirQualityIndexSensor,
+        'MainPollutantSensor': MainPollutantSensor
+    }
 
     api_key = config.get(CONF_API_KEY)
     monitored_locales = config.get(CONF_MONITORED_CONDITIONS)
@@ -96,63 +100,63 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     if city and state and country:
         _LOGGER.debug(
             "Using city, state, and country: %s, %s, %s", city, state, country)
+        location_id = ','.join((city, state, country))
         data = AirVisualData(
-            pav.Client(api_key), city=city, state=state, country=country,
+            Client(api_key), city=city, state=state, country=country,
             show_on_map=show_on_map)
     else:
         _LOGGER.debug(
             "Using latitude and longitude: %s, %s", latitude, longitude)
+        location_id = ','.join((str(latitude), str(longitude)))
         data = AirVisualData(
-            pav.Client(api_key), latitude=latitude, longitude=longitude,
+            Client(api_key), latitude=latitude, longitude=longitude,
             radius=radius, show_on_map=show_on_map)
 
     data.update()
+
     sensors = []
     for locale in monitored_locales:
         for sensor_class, name, icon in SENSOR_TYPES:
-            sensors.append(globals()[sensor_class](data, name, icon, locale))
+            sensors.append(classes[sensor_class](
+                data,
+                name,
+                icon,
+                locale,
+                location_id
+            ))
 
     add_devices(sensors, True)
-
-
-def merge_two_dicts(dict1, dict2):
-    """Merge two dicts into a new dict as a shallow copy."""
-    final = dict1.copy()
-    final.update(dict2)
-    return final
 
 
 class AirVisualBaseSensor(Entity):
     """Define a base class for all of our sensors."""
 
-    def __init__(self, data, name, icon, locale):
+    def __init__(self, data, name, icon, locale, entity_id):
         """Initialize the sensor."""
-        self._data = data
+        self.data = data
+        self._attrs = {}
         self._icon = icon
         self._locale = locale
         self._name = name
         self._state = None
+        self._entity_id = entity_id
         self._unit = None
 
     @property
     def device_state_attributes(self):
         """Return the device state attributes."""
-        attrs = {
+        self._attrs.update({
             ATTR_ATTRIBUTION: CONF_ATTRIBUTION,
-            ATTR_CITY: self._data.city,
-            ATTR_COUNTRY: self._data.country,
-            ATTR_REGION: self._data.state,
-            ATTR_TIMESTAMP: self._data.pollution_info.get('ts')
-        }
+        })
 
-        if self._data.show_on_map:
-            attrs[ATTR_LATITUDE] = self._data.latitude
-            attrs[ATTR_LONGITUDE] = self._data.longitude
+        if self.data.show_on_map:
+            self._attrs[ATTR_LATITUDE] = self.data.latitude
+            self._attrs[ATTR_LONGITUDE] = self.data.longitude
         else:
-            attrs['lati'] = self._data.latitude
-            attrs['long'] = self._data.longitude
+            self._attrs['lati'] = self.data.latitude
+            self._attrs['long'] = self.data.longitude
 
-        return attrs
+        return self._attrs
 
     @property
     def icon(self):
@@ -173,11 +177,16 @@ class AirVisualBaseSensor(Entity):
 class AirPollutionLevelSensor(AirVisualBaseSensor):
     """Define a sensor to measure air pollution level."""
 
+    @property
+    def unique_id(self):
+        """Return a unique, HASS-friendly identifier for this entity."""
+        return '{0}_pollution_level'.format(self._entity_id)
+
     def update(self):
         """Update the status of the sensor."""
-        self._data.update()
+        self.data.update()
 
-        aqi = self._data.pollution_info.get('aqi{0}'.format(self._locale))
+        aqi = self.data.pollution_info.get('aqi{0}'.format(self._locale))
         try:
             [level] = [
                 i for i in POLLUTANT_LEVEL_MAPPING
@@ -194,44 +203,51 @@ class AirQualityIndexSensor(AirVisualBaseSensor):
     """Define a sensor to measure AQI."""
 
     @property
+    def unique_id(self):
+        """Return a unique, HASS-friendly identifier for this entity."""
+        return '{0}_aqi'.format(self._entity_id)
+
+    @property
     def unit_of_measurement(self):
         """Return the unit the value is expressed in."""
-        return 'PSI'
+        return 'AQI'
 
     def update(self):
         """Update the status of the sensor."""
-        self._data.update()
+        self.data.update()
 
-        self._state = self._data.pollution_info.get(
+        self._state = self.data.pollution_info.get(
             'aqi{0}'.format(self._locale))
 
 
 class MainPollutantSensor(AirVisualBaseSensor):
     """Define a sensor to the main pollutant of an area."""
 
-    def __init__(self, data, name, icon, locale):
+    def __init__(self, data, name, icon, locale, entity_id):
         """Initialize the sensor."""
-        super().__init__(data, name, icon, locale)
+        super().__init__(data, name, icon, locale, entity_id)
         self._symbol = None
         self._unit = None
 
     @property
-    def device_state_attributes(self):
-        """Return the device state attributes."""
-        return merge_two_dicts(super().device_state_attributes, {
-            ATTR_POLLUTANT_SYMBOL: self._symbol,
-            ATTR_POLLUTANT_UNIT: self._unit
-        })
+    def unique_id(self):
+        """Return a unique, HASS-friendly identifier for this entity."""
+        return '{0}_main_pollutant'.format(self._entity_id)
 
     def update(self):
         """Update the status of the sensor."""
-        self._data.update()
+        self.data.update()
 
-        symbol = self._data.pollution_info.get('main{0}'.format(self._locale))
+        symbol = self.data.pollution_info.get('main{0}'.format(self._locale))
         pollution_info = POLLUTANT_MAPPING.get(symbol, {})
         self._state = pollution_info.get('label')
         self._unit = pollution_info.get('unit')
         self._symbol = symbol
+
+        self._attrs.update({
+            ATTR_POLLUTANT_SYMBOL: self._symbol,
+            ATTR_POLLUTANT_UNIT: self._unit
+        })
 
 
 class AirVisualData(object):
@@ -240,6 +256,7 @@ class AirVisualData(object):
     def __init__(self, client, **kwargs):
         """Initialize the AirVisual data element."""
         self._client = client
+        self.attrs = {}
         self.pollution_info = None
 
         self.city = kwargs.get(CONF_CITY)
@@ -255,24 +272,27 @@ class AirVisualData(object):
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     def update(self):
         """Update with new AirVisual data."""
-        import pyairvisual.exceptions as exceptions
+        from pyairvisual.exceptions import HTTPError
 
         try:
             if self.city and self.state and self.country:
                 resp = self._client.city(
                     self.city, self.state, self.country).get('data')
+                self.longitude, self.latitude = resp.get('location').get(
+                    'coordinates')
             else:
                 resp = self._client.nearest_city(
                     self.latitude, self.longitude, self._radius).get('data')
             _LOGGER.debug("New data retrieved: %s", resp)
 
-            self.city = resp.get('city')
-            self.state = resp.get('state')
-            self.country = resp.get('country')
-            self.longitude, self.latitude = resp.get('location').get(
-                'coordinates')
             self.pollution_info = resp.get('current', {}).get('pollution', {})
-        except exceptions.HTTPError as exc_info:
+
+            self.attrs = {
+                ATTR_CITY: resp.get('city'),
+                ATTR_REGION: resp.get('state'),
+                ATTR_COUNTRY: resp.get('country')
+            }
+        except HTTPError as exc_info:
             _LOGGER.error("Unable to retrieve data on this location: %s",
                           self.__dict__)
             _LOGGER.debug(exc_info)

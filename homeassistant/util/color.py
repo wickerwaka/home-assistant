@@ -1,11 +1,8 @@
 """Color util methods."""
-import logging
 import math
 import colorsys
 
 from typing import Tuple
-
-_LOGGER = logging.getLogger(__name__)
 
 # Official CSS3 colors from w3.org:
 # https://www.w3.org/TR/2010/PR-css3-color-20101028/#html4
@@ -171,8 +168,7 @@ def color_name_to_rgb(color_name):
     # spaces in it as well for matching purposes
     hex_value = COLORS.get(color_name.replace(' ', '').lower())
     if not hex_value:
-        _LOGGER.error('unknown color supplied %s default to white', color_name)
-        hex_value = COLORS['white']
+        raise ValueError('Unknown color')
 
     return hex_value
 
@@ -258,16 +254,68 @@ def color_xy_brightness_to_RGB(vX: float, vY: float,
 
 
 # pylint: disable=invalid-sequence-index
-def color_RGB_to_hsv(iR: int, iG: int, iB: int) -> Tuple[int, int, int]:
-    """Convert an rgb color to its hsv representation."""
-    fHSV = colorsys.rgb_to_hsv(iR/255.0, iG/255.0, iB/255.0)
-    return (int(fHSV[0]*65536), int(fHSV[1]*255), int(fHSV[2]*255))
+def color_hsb_to_RGB(fH: float, fS: float, fB: float) -> Tuple[int, int, int]:
+    """Convert a hsb into its rgb representation."""
+    if fS == 0:
+        fV = fB * 255
+        return (fV, fV, fV)
+
+    r = g = b = 0
+    h = fH / 60
+    f = h - float(math.floor(h))
+    p = fB * (1 - fS)
+    q = fB * (1 - fS * f)
+    t = fB * (1 - (fS * (1 - f)))
+
+    if int(h) == 0:
+        r = int(fB * 255)
+        g = int(t * 255)
+        b = int(p * 255)
+    elif int(h) == 1:
+        r = int(q * 255)
+        g = int(fB * 255)
+        b = int(p * 255)
+    elif int(h) == 2:
+        r = int(p * 255)
+        g = int(fB * 255)
+        b = int(t * 255)
+    elif int(h) == 3:
+        r = int(p * 255)
+        g = int(q * 255)
+        b = int(fB * 255)
+    elif int(h) == 4:
+        r = int(t * 255)
+        g = int(p * 255)
+        b = int(fB * 255)
+    elif int(h) == 5:
+        r = int(fB * 255)
+        g = int(p * 255)
+        b = int(q * 255)
+
+    return (r, g, b)
 
 
 # pylint: disable=invalid-sequence-index
-def color_hsv_to_RGB(iH: int, iS: int, iV: int) -> Tuple[int, int, int]:
-    """Convert an hsv color into its rgb representation."""
-    fRGB = colorsys.hsv_to_rgb(iH/65536, iS/255, iV/255)
+def color_RGB_to_hsv(iR: int, iG: int, iB: int) -> Tuple[float, float, float]:
+    """Convert an rgb color to its hsv representation.
+
+    Hue is scaled 0-360
+    Sat is scaled 0-100
+    Val is scaled 0-100
+    """
+    fHSV = colorsys.rgb_to_hsv(iR/255.0, iG/255.0, iB/255.0)
+    return round(fHSV[0]*360, 3), round(fHSV[1]*100, 3), round(fHSV[2]*100, 3)
+
+
+# pylint: disable=invalid-sequence-index
+def color_hsv_to_RGB(iH: float, iS: float, iV: float) -> Tuple[int, int, int]:
+    """Convert an hsv color into its rgb representation.
+
+    Hue is scaled 0-360
+    Sat is scaled 0-100
+    Val is scaled 0-100
+    """
+    fRGB = colorsys.hsv_to_rgb(iH/360, iS/100, iV/100)
     return (int(fRGB[0]*255), int(fRGB[1]*255), int(fRGB[2]*255))
 
 
@@ -315,7 +363,7 @@ def color_rgbw_to_rgb(r, g, b, w):
 
 def color_rgb_to_hex(r, g, b):
     """Return a RGB color from a hex color string."""
-    return '{0:02x}{1:02x}{2:02x}'.format(r, g, b)
+    return '{0:02x}{1:02x}{2:02x}'.format(round(r), round(g), round(b))
 
 
 def rgb_hex_to_rgb_list(hex_string):
@@ -350,8 +398,8 @@ def color_temperature_to_rgb(color_temperature_kelvin):
     return (red, green, blue)
 
 
-def _bound(color_component: float, minimum: float=0,
-           maximum: float=255) -> float:
+def _bound(color_component: float, minimum: float = 0,
+           maximum: float = 255) -> float:
     """
     Bound the given color component value between the given min and max values.
 
@@ -392,9 +440,9 @@ def _get_blue(temperature: float) -> float:
 
 def color_temperature_mired_to_kelvin(mired_temperature):
     """Convert absolute mired shift to degrees kelvin."""
-    return 1000000 / mired_temperature
+    return math.floor(1000000 / mired_temperature)
 
 
 def color_temperature_kelvin_to_mired(kelvin_temperature):
     """Convert degrees kelvin to mired shift."""
-    return 1000000 / kelvin_temperature
+    return math.floor(1000000 / kelvin_temperature)

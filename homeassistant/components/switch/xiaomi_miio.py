@@ -18,14 +18,22 @@ from homeassistant.exceptions import PlatformNotReady
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NAME = 'Xiaomi Miio Switch'
-PLATFORM = 'xiaomi_miio'
+
+CONF_MODEL = 'model'
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HOST): cv.string,
     vol.Required(CONF_TOKEN): vol.All(cv.string, vol.Length(min=32, max=32)),
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_MODEL): vol.In(
+        ['chuangmi.plug.v1',
+         'qmi.powerstrip.v1',
+         'zimi.powerstrip.v2',
+         'chuangmi.plug.m1',
+         'chuangmi.plug.v2']),
 })
 
-REQUIREMENTS = ['python-mirobo==0.2.0']
+REQUIREMENTS = ['python-miio==0.3.7']
 
 ATTR_POWER = 'power'
 ATTR_TEMPERATURE = 'temperature'
@@ -38,44 +46,76 @@ SUCCESS = ['ok']
 @asyncio.coroutine
 def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     """Set up the switch from config."""
-    from mirobo import Plug, DeviceException
+    from miio import Device, DeviceException
 
     host = config.get(CONF_HOST)
     name = config.get(CONF_NAME)
     token = config.get(CONF_TOKEN)
+    model = config.get(CONF_MODEL)
 
     _LOGGER.info("Initializing with host %s (token %s...)", host, token[:5])
 
-    try:
+    devices = []
+
+    if model is None:
+        try:
+            miio_device = Device(host, token)
+            device_info = miio_device.info()
+            model = device_info.model
+            _LOGGER.info("%s %s %s detected",
+                         model,
+                         device_info.firmware_version,
+                         device_info.hardware_version)
+        except DeviceException:
+            raise PlatformNotReady
+
+    if model in ['chuangmi.plug.v1']:
+        from miio import PlugV1
+        plug = PlugV1(host, token)
+
+        # The device has two switchable channels (mains and a USB port).
+        # A switch device per channel will be created.
+        for channel_usb in [True, False]:
+            device = ChuangMiPlugV1Switch(
+                name, plug, model, channel_usb)
+            devices.append(device)
+
+    elif model in ['qmi.powerstrip.v1',
+                   'zimi.powerstrip.v2']:
+        from miio import PowerStrip
+        plug = PowerStrip(host, token)
+        device = XiaomiPowerStripSwitch(name, plug, model)
+        devices.append(device)
+    elif model in ['chuangmi.plug.m1',
+                   'chuangmi.plug.v2']:
+        from miio import Plug
         plug = Plug(host, token)
-        device_info = plug.info()
-        _LOGGER.info("%s %s %s initialized",
-                     device_info.raw['model'],
-                     device_info.raw['fw_ver'],
-                     device_info.raw['hw_ver'])
+        device = XiaomiPlugGenericSwitch(name, plug, model)
+        devices.append(device)
+    else:
+        _LOGGER.error(
+            'Unsupported device found! Please create an issue at '
+            'https://github.com/rytilahti/python-miio/issues '
+            'and provide the following data: %s', model)
+        return False
 
-        xiaomi_plug_switch = XiaomiPlugSwitch(name, plug, device_info)
-    except DeviceException:
-        raise PlatformNotReady
-
-    async_add_devices([xiaomi_plug_switch], update_before_add=True)
+    async_add_devices(devices, update_before_add=True)
 
 
-class XiaomiPlugSwitch(SwitchDevice):
-    """Representation of a Xiaomi Plug."""
+class XiaomiPlugGenericSwitch(SwitchDevice):
+    """Representation of a Xiaomi Plug Generic."""
 
-    def __init__(self, name, plug, device_info):
+    def __init__(self, name, plug, model):
         """Initialize the plug switch."""
         self._name = name
         self._icon = 'mdi:power-socket'
-        self._device_info = device_info
+        self._model = model
 
         self._plug = plug
         self._state = None
         self._state_attrs = {
             ATTR_TEMPERATURE: None,
-            ATTR_LOAD_POWER: None,
-            ATTR_MODEL: self._device_info.raw['model'],
+            ATTR_MODEL: self._model,
         }
         self._skip_update = False
 
@@ -112,7 +152,7 @@ class XiaomiPlugSwitch(SwitchDevice):
     @asyncio.coroutine
     def _try_command(self, mask_error, func, *args, **kwargs):
         """Call a plug command handling error messages."""
-        from mirobo import DeviceException
+        from miio import DeviceException
         try:
             result = yield from self.hass.async_add_job(
                 partial(func, *args, **kwargs))
@@ -147,7 +187,44 @@ class XiaomiPlugSwitch(SwitchDevice):
     @asyncio.coroutine
     def async_update(self):
         """Fetch state from the device."""
-        from mirobo import DeviceException
+        from miio import DeviceException
+
+        # On state change the device doesn't provide the new state immediately.
+        if self._skip_update:
+            self._skip_update = False
+            return
+
+        try:
+            state = yield from self.hass.async_add_job(self._plug.status)
+            _LOGGER.debug("Got new state: %s", state)
+
+            self._state = state.is_on
+            self._state_attrs.update({
+                ATTR_TEMPERATURE: state.temperature
+            })
+
+        except DeviceException as ex:
+            self._state = None
+            _LOGGER.error("Got exception while fetching the state: %s", ex)
+
+
+class XiaomiPowerStripSwitch(XiaomiPlugGenericSwitch, SwitchDevice):
+    """Representation of a Xiaomi Power Strip."""
+
+    def __init__(self, name, plug, model):
+        """Initialize the plug switch."""
+        XiaomiPlugGenericSwitch.__init__(self, name, plug, model)
+
+        self._state_attrs = {
+            ATTR_TEMPERATURE: None,
+            ATTR_LOAD_POWER: None,
+            ATTR_MODEL: self._model,
+        }
+
+    @asyncio.coroutine
+    def async_update(self):
+        """Fetch state from the device."""
+        from miio import DeviceException
 
         # On state change the device doesn't provide the new state immediately.
         if self._skip_update:
@@ -161,8 +238,75 @@ class XiaomiPlugSwitch(SwitchDevice):
             self._state = state.is_on
             self._state_attrs.update({
                 ATTR_TEMPERATURE: state.temperature,
-                ATTR_LOAD_POWER: state.load_power,
+                ATTR_LOAD_POWER: state.load_power
             })
 
         except DeviceException as ex:
+            self._state = None
+            _LOGGER.error("Got exception while fetching the state: %s", ex)
+
+
+class ChuangMiPlugV1Switch(XiaomiPlugGenericSwitch, SwitchDevice):
+    """Representation of a Chuang Mi Plug V1."""
+
+    def __init__(self, name, plug, model, channel_usb):
+        """Initialize the plug switch."""
+        name = '{} USB'.format(name) if channel_usb else name
+
+        XiaomiPlugGenericSwitch.__init__(self, name, plug, model)
+        self._channel_usb = channel_usb
+
+    @asyncio.coroutine
+    def async_turn_on(self, **kwargs):
+        """Turn a channel on."""
+        if self._channel_usb:
+            result = yield from self._try_command(
+                "Turning the plug on failed.", self._plug.usb_on)
+        else:
+            result = yield from self._try_command(
+                "Turning the plug on failed.", self._plug.on)
+
+        if result:
+            self._state = True
+            self._skip_update = True
+
+    @asyncio.coroutine
+    def async_turn_off(self, **kwargs):
+        """Turn a channel off."""
+        if self._channel_usb:
+            result = yield from self._try_command(
+                "Turning the plug on failed.", self._plug.usb_off)
+        else:
+            result = yield from self._try_command(
+                "Turning the plug on failed.", self._plug.off)
+
+        if result:
+            self._state = False
+            self._skip_update = True
+
+    @asyncio.coroutine
+    def async_update(self):
+        """Fetch state from the device."""
+        from miio import DeviceException
+
+        # On state change the device doesn't provide the new state immediately.
+        if self._skip_update:
+            self._skip_update = False
+            return
+
+        try:
+            state = yield from self.hass.async_add_job(self._plug.status)
+            _LOGGER.debug("Got new state: %s", state)
+
+            if self._channel_usb:
+                self._state = state.usb_power
+            else:
+                self._state = state.is_on
+
+            self._state_attrs.update({
+                ATTR_TEMPERATURE: state.temperature
+            })
+
+        except DeviceException as ex:
+            self._state = None
             _LOGGER.error("Got exception while fetching the state: %s", ex)

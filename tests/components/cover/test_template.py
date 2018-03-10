@@ -275,7 +275,7 @@ class TestTemplateCover(unittest.TestCase):
         assert self.hass.states.all() == []
 
     def test_template_open_and_close(self):
-        """Test that if open_cover is specified, cose_cover is too."""
+        """Test that if open_cover is specified, close_cover is too."""
         with assert_setup_component(0, 'cover'):
             assert setup.setup_component(self.hass, 'cover', {
                 'cover': {
@@ -682,3 +682,43 @@ class TestTemplateCover(unittest.TestCase):
         state = self.hass.states.get('cover.test_template_cover')
 
         assert state.attributes['icon'] == 'mdi:check'
+
+    def test_entity_picture_template(self):
+        """Test icon template."""
+        with assert_setup_component(1, 'cover'):
+            assert setup.setup_component(self.hass, 'cover', {
+                'cover': {
+                    'platform': 'template',
+                    'covers': {
+                        'test_template_cover': {
+                            'value_template':
+                                "{{ states.cover.test_state.state }}",
+                            'open_cover': {
+                                'service': 'cover.open_cover',
+                                'entity_id': 'cover.test_state'
+                            },
+                            'close_cover': {
+                                'service': 'cover.close_cover',
+                                'entity_id': 'cover.test_state'
+                            },
+                            'entity_picture_template':
+                                "{% if states.cover.test_state.state %}"
+                                "/local/cover.png"
+                                "{% endif %}"
+                        }
+                    }
+                }
+            })
+
+        self.hass.start()
+        self.hass.block_till_done()
+
+        state = self.hass.states.get('cover.test_template_cover')
+        assert state.attributes.get('entity_picture') == ''
+
+        state = self.hass.states.set('cover.test_state', STATE_OPEN)
+        self.hass.block_till_done()
+
+        state = self.hass.states.get('cover.test_template_cover')
+
+        assert state.attributes['entity_picture'] == '/local/cover.png'

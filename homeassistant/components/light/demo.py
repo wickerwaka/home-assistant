@@ -4,7 +4,6 @@ Demo light platform that implements lights.
 For more details about this platform, please refer to the documentation
 https://home-assistant.io/components/demo/
 """
-import asyncio
 import random
 
 from homeassistant.components.light import (
@@ -29,11 +28,11 @@ SUPPORT_DEMO = (SUPPORT_BRIGHTNESS | SUPPORT_COLOR_TEMP | SUPPORT_EFFECT |
 def setup_platform(hass, config, add_devices_callback, discovery_info=None):
     """Set up the demo light platform."""
     add_devices_callback([
-        DemoLight("Bed Light", False, True, effect_list=LIGHT_EFFECT_LIST,
+        DemoLight(1, "Bed Light", False, True, effect_list=LIGHT_EFFECT_LIST,
                   effect=LIGHT_EFFECT_LIST[0]),
-        DemoLight("Ceiling Lights", True, True,
+        DemoLight(2, "Ceiling Lights", True, True,
                   LIGHT_COLORS[0], LIGHT_TEMPS[1]),
-        DemoLight("Kitchen Lights", True, True,
+        DemoLight(3, "Kitchen Lights", True, True,
                   LIGHT_COLORS[1], LIGHT_TEMPS[0])
     ])
 
@@ -41,10 +40,11 @@ def setup_platform(hass, config, add_devices_callback, discovery_info=None):
 class DemoLight(Light):
     """Representation of a demo light."""
 
-    def __init__(self, name, state, available=False, rgb=None, ct=None,
-                 brightness=180, xy_color=(.5, .5), white=200,
+    def __init__(self, unique_id, name, state, available=False, rgb=None,
+                 ct=None, brightness=180, xy_color=(.5, .5), white=200,
                  effect_list=None, effect=None):
         """Initialize the light."""
+        self._unique_id = unique_id
         self._name = name
         self._state = state
         self._rgb = rgb
@@ -64,6 +64,11 @@ class DemoLight(Light):
     def name(self) -> str:
         """Return the name of the light if any."""
         return self._name
+
+    @property
+    def unique_id(self):
+        """Return unique ID for light."""
+        return self._unique_id
 
     @property
     def available(self) -> bool:
@@ -150,26 +155,3 @@ class DemoLight(Light):
         # As we have disabled polling, we need to inform
         # Home Assistant about updates in our state ourselves.
         self.schedule_update_ha_state()
-
-    @asyncio.coroutine
-    def async_restore_state(self, is_on, **kwargs):
-        """Restore the demo state."""
-        self._state = is_on
-
-        if 'brightness' in kwargs:
-            self._brightness = kwargs['brightness']
-
-        if 'color_temp' in kwargs:
-            self._ct = kwargs['color_temp']
-
-        if 'rgb_color' in kwargs:
-            self._rgb = kwargs['rgb_color']
-
-        if 'xy_color' in kwargs:
-            self._xy_color = kwargs['xy_color']
-
-        if 'white_value' in kwargs:
-            self._white = kwargs['white_value']
-
-        if 'effect' in kwargs:
-            self._effect = kwargs['effect']

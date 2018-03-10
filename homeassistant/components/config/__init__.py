@@ -8,20 +8,29 @@ from homeassistant.core import callback
 from homeassistant.const import EVENT_COMPONENT_LOADED, CONF_ID
 from homeassistant.setup import (
     async_prepare_setup_platform, ATTR_COMPONENT)
-from homeassistant.components.frontend import register_built_in_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.util.yaml import load_yaml, dump
 
 DOMAIN = 'config'
 DEPENDENCIES = ['http']
-SECTIONS = ('core', 'customize', 'group', 'hassbian', 'automation', 'script')
-ON_DEMAND = ('zwave')
+SECTIONS = ('core', 'customize', 'group', 'hassbian', 'automation', 'script',
+            'entity_registry')
+ON_DEMAND = ('zwave',)
+FEATURE_FLAGS = ('config_entries',)
 
 
 @asyncio.coroutine
 def async_setup(hass, config):
     """Set up the config component."""
-    register_built_in_panel(hass, 'config', 'Configuration', 'mdi:settings')
+    global SECTIONS
+
+    yield from hass.components.frontend.async_register_built_in_panel(
+        'config', 'config', 'mdi:settings')
+
+    # Temporary way of allowing people to opt-in for unreleased config sections
+    for key, value in config.get(DOMAIN, {}).items():
+        if key in FEATURE_FLAGS and value:
+            SECTIONS += (key,)
 
     @asyncio.coroutine
     def setup_panel(panel_name):
@@ -151,7 +160,7 @@ class EditKeyBasedConfigView(BaseEditConfigView):
 
     def _get_value(self, hass, data, config_key):
         """Get value."""
-        return data.get(config_key, {})
+        return data.get(config_key)
 
     def _write_value(self, hass, data, config_key, new_value):
         """Set value."""

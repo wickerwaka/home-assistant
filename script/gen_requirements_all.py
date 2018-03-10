@@ -5,6 +5,7 @@ import os
 import pkgutil
 import re
 import sys
+import fnmatch
 
 COMMENT_REQUIREMENTS = (
     'RPi.GPIO',
@@ -31,37 +32,44 @@ COMMENT_REQUIREMENTS = (
     'envirophat',
     'i2csense',
     'credstash',
-    'aiocoap',  # Temp, will be removed when Python 3.4 is no longer supported.
-    'DTLSSocket'  # Requires cython.
+    'bme680',
 )
 
 TEST_REQUIREMENTS = (
     'aioautomatic',
     'aiohttp_cors',
+    'aiohue',
     'apns2',
+    'caldav',
+    'coinmarketcap',
     'defusedxml',
     'dsmr_parser',
     'ephem',
     'evohomeclient',
     'feedparser',
-    'fuzzywuzzy',
     'gTTS-token',
+    'HAP-python',
     'ha-ffmpeg',
     'haversine',
     'hbmqtt',
     'holidays',
+    'home-assistant-frontend',
     'influxdb',
     'libpurecoollink',
     'libsoundtouch',
     'mficlient',
+    'numpy',
     'paho-mqtt',
     'pexpect',
     'pilight',
     'pmsensor',
     'prometheus_client',
+    'pushbullet.py',
+    'py-canary',
     'pydispatcher',
     'PyJWT',
     'pylitejet',
+    'pymonoprice',
     'pynx584',
     'python-forecastio',
     'pyunifi',
@@ -76,12 +84,17 @@ TEST_REQUIREMENTS = (
     'sqlalchemy',
     'statsd',
     'uvcclient',
+    'voluptuous-serialize',
     'warrant',
     'yahoo-finance',
+    'pythonwhois',
+    'wakeonlan',
+    'vultr'
 )
 
 IGNORE_PACKAGES = (
     'homeassistant.components.recorder.models',
+    'homeassistant.components.homekit.*'
 )
 
 IGNORE_PIN = ('colorlog>2.1,<3', 'keyring>=9.3,<10.0', 'urllib3')
@@ -97,8 +110,11 @@ URL_PIN = ('https://home-assistant.io/developers/code_review_platform/'
 CONSTRAINT_PATH = os.path.join(os.path.dirname(__file__),
                                '../homeassistant/package_constraints.txt')
 CONSTRAINT_BASE = """
-# Breaks Python 3.6 and is not needed for our supported Pythons
+# Breaks Python 3.6 and is not needed for our supported Python versions
 enum34==1000000000.0.0
+
+# This is a old unmaintained library and is replaced with pycryptodome
+pycrypto==1000000000.0.0
 """
 
 
@@ -144,7 +160,10 @@ def gather_modules():
         try:
             module = importlib.import_module(package)
         except ImportError:
-            if package not in IGNORE_PACKAGES:
+            for pattern in IGNORE_PACKAGES:
+                if fnmatch.fnmatch(package, pattern):
+                    break
+            else:
                 errors.append(package)
             continue
 

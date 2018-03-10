@@ -11,13 +11,13 @@ from datetime import timedelta
 
 import voluptuous as vol
 
-from homeassistant.core import callback
 import homeassistant.components.mqtt as mqtt
+import homeassistant.helpers.config_validation as cv
+from homeassistant.components.mqtt import CONF_STATE_TOPIC
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
-    CONF_NAME, CONF_TIMEOUT, STATE_NOT_HOME)
-from homeassistant.components.mqtt import CONF_STATE_TOPIC
-import homeassistant.helpers.config_validation as cv
+    CONF_NAME, CONF_TIMEOUT, STATE_NOT_HOME, ATTR_ID)
+from homeassistant.core import callback
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import dt, slugify
 
@@ -27,16 +27,14 @@ DEPENDENCIES = ['mqtt']
 
 ATTR_DEVICE_ID = 'device_id'
 ATTR_DISTANCE = 'distance'
-ATTR_ID = 'id'
 ATTR_ROOM = 'room'
 
 CONF_DEVICE_ID = 'device_id'
-CONF_ROOM = 'room'
 CONF_AWAY_TIMEOUT = 'away_timeout'
 
+DEFAULT_AWAY_TIMEOUT = 0
 DEFAULT_NAME = 'Room Sensor'
 DEFAULT_TIMEOUT = 5
-DEFAULT_AWAY_TIMEOUT = 0
 DEFAULT_TOPIC = 'room_presence'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
@@ -82,11 +80,9 @@ class MQTTRoomSensor(Entity):
         self._distance = None
         self._updated = None
 
+    @asyncio.coroutine
     def async_added_to_hass(self):
-        """Subscribe to MQTT events.
-
-        This method must be run in the event loop and returns a coroutine.
-        """
+        """Subscribe to MQTT events."""
         @callback
         def update_state(device_id, room, distance):
             """Update the sensor state."""

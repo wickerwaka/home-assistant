@@ -25,13 +25,9 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     for (_, gateway) in hass.data[PY_XIAOMI_GATEWAY].gateways.items():
         for device in gateway.devices['binary_sensor']:
             model = device['model']
-            if model == 'motion':
+            if model in ['motion', 'sensor_motion.aq2']:
                 devices.append(XiaomiMotionSensor(device, hass, gateway))
-            elif model == 'sensor_motion.aq2':
-                devices.append(XiaomiMotionSensor(device, hass, gateway))
-            elif model == 'magnet':
-                devices.append(XiaomiDoorSensor(device, gateway))
-            elif model == 'sensor_magnet.aq2':
+            elif model in ['magnet', 'sensor_magnet.aq2']:
                 devices.append(XiaomiDoorSensor(device, gateway))
             elif model == 'sensor_wleak.aq1':
                 devices.append(XiaomiWaterLeakSensor(device, gateway))
@@ -39,10 +35,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
                 devices.append(XiaomiSmokeSensor(device, gateway))
             elif model == 'natgas':
                 devices.append(XiaomiNatgasSensor(device, gateway))
-            elif model == 'switch':
-                devices.append(XiaomiButton(device, 'Switch', 'status',
-                                            hass, gateway))
-            elif model == 'sensor_switch.aq2':
+            elif model in ['switch', 'sensor_switch.aq2', 'sensor_switch.aq3']:
                 devices.append(XiaomiButton(device, 'Switch', 'status',
                                             hass, gateway))
             elif model == '86sw1':
@@ -108,7 +101,7 @@ class XiaomiNatgasSensor(XiaomiBinarySensor):
         attrs.update(super().device_state_attributes)
         return attrs
 
-    def parse_data(self, data):
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
         if DENSITY in data:
             self._density = int(data.get(DENSITY))
@@ -146,8 +139,16 @@ class XiaomiMotionSensor(XiaomiBinarySensor):
         attrs.update(super().device_state_attributes)
         return attrs
 
-    def parse_data(self, data):
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
+        if raw_data['cmd'] == 'heartbeat':
+            _LOGGER.debug(
+                'Skipping heartbeat of the motion sensor. '
+                'It can introduce an incorrect state because of a firmware '
+                'bug (https://github.com/home-assistant/home-assistant/pull/'
+                '11631#issuecomment-357507744).')
+            return
+
         self._should_poll = False
         if NO_MOTION in data:  # handle push from the hub
             self._no_motion_since = data[NO_MOTION]
@@ -193,7 +194,7 @@ class XiaomiDoorSensor(XiaomiBinarySensor):
         attrs.update(super().device_state_attributes)
         return attrs
 
-    def parse_data(self, data):
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
         self._should_poll = False
         if NO_CLOSE in data:  # handle push from the hub
@@ -226,7 +227,7 @@ class XiaomiWaterLeakSensor(XiaomiBinarySensor):
         XiaomiBinarySensor.__init__(self, device, 'Water Leak Sensor',
                                     xiaomi_hub, 'status', 'moisture')
 
-    def parse_data(self, data):
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
         self._should_poll = False
 
@@ -263,7 +264,7 @@ class XiaomiSmokeSensor(XiaomiBinarySensor):
         attrs.update(super().device_state_attributes)
         return attrs
 
-    def parse_data(self, data):
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
         if DENSITY in data:
             self._density = int(data.get(DENSITY))
@@ -289,10 +290,18 @@ class XiaomiButton(XiaomiBinarySensor):
     def __init__(self, device, name, data_key, hass, xiaomi_hub):
         """Initialize the XiaomiButton."""
         self._hass = hass
+        self._last_action = None
         XiaomiBinarySensor.__init__(self, device, name, xiaomi_hub,
                                     data_key, None)
 
-    def parse_data(self, data):
+    @property
+    def device_state_attributes(self):
+        """Return the state attributes."""
+        attrs = {ATTR_LAST_ACTION: self._last_action}
+        attrs.update(super().device_state_attributes)
+        return attrs
+
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
         value = data.get(self._data_key)
         if value is None:
@@ -310,13 +319,18 @@ class XiaomiButton(XiaomiBinarySensor):
             click_type = 'double'
         elif value == 'both_click':
             click_type = 'both'
+        elif value == 'shake':
+            click_type = 'shake'
         else:
+            _LOGGER.warning("Unsupported click_type detected: %s", value)
             return False
 
         self._hass.bus.fire('click', {
             'entity_id': self.entity_id,
             'click_type': click_type
         })
+        self._last_action = click_type
+
         if value in ['long_click_press', 'long_click_release']:
             return True
         return False
@@ -340,7 +354,7 @@ class XiaomiCube(XiaomiBinarySensor):
         attrs.update(super().device_state_attributes)
         return attrs
 
-    def parse_data(self, data):
+    def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""
         if 'status' in data:
             self._hass.bus.fire('cube_action', {

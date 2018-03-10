@@ -17,18 +17,22 @@ from homeassistant.const import (
     HTTP_BAD_REQUEST, CONF_DOMAINS, CONF_ENTITIES, CONF_EXCLUDE, CONF_INCLUDE)
 import homeassistant.util.dt as dt_util
 from homeassistant.components import recorder, script
-from homeassistant.components.frontend import register_built_in_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import ATTR_HIDDEN
 from homeassistant.components.recorder.util import session_scope, execute
+import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = 'history'
 DEPENDENCIES = ['recorder', 'http']
 
+CONF_ORDER = 'use_include_order'
+
 CONFIG_SCHEMA = vol.Schema({
-    DOMAIN: recorder.FILTER_SCHEMA,
+    DOMAIN: recorder.FILTER_SCHEMA.extend({
+        vol.Optional(CONF_ORDER, default=False): cv.boolean,
+    })
 }, extra=vol.ALLOW_EXTRA)
 
 SIGNIFICANT_DOMAINS = ('thermostat', 'climate')
@@ -231,21 +235,23 @@ def get_state(hass, utc_point_in_time, entity_id, run=None):
     return states[0] if states else None
 
 
-# pylint: disable=unused-argument
-def setup(hass, config):
+@asyncio.coroutine
+def async_setup(hass, config):
     """Set up the history hooks."""
     filters = Filters()
     exclude = config[DOMAIN].get(CONF_EXCLUDE)
     if exclude:
-        filters.excluded_entities = exclude[CONF_ENTITIES]
-        filters.excluded_domains = exclude[CONF_DOMAINS]
+        filters.excluded_entities = exclude.get(CONF_ENTITIES, [])
+        filters.excluded_domains = exclude.get(CONF_DOMAINS, [])
     include = config[DOMAIN].get(CONF_INCLUDE)
     if include:
-        filters.included_entities = include[CONF_ENTITIES]
-        filters.included_domains = include[CONF_DOMAINS]
+        filters.included_entities = include.get(CONF_ENTITIES, [])
+        filters.included_domains = include.get(CONF_DOMAINS, [])
+    use_include_order = config[DOMAIN].get(CONF_ORDER)
 
-    hass.http.register_view(HistoryPeriodView(filters))
-    register_built_in_panel(hass, 'history', 'History', 'mdi:poll-box')
+    hass.http.register_view(HistoryPeriodView(filters, use_include_order))
+    yield from hass.components.frontend.async_register_built_in_panel(
+        'history', 'history', 'mdi:poll-box')
 
     return True
 
@@ -257,9 +263,10 @@ class HistoryPeriodView(HomeAssistantView):
     name = 'api:history:view-period'
     extra_urls = ['/api/history/period/{datetime}']
 
-    def __init__(self, filters):
+    def __init__(self, filters, use_include_order):
         """Initialize the history period view."""
         self.filters = filters
+        self.use_include_order = use_include_order
 
     @asyncio.coroutine
     def get(self, request, datetime=None):
@@ -296,15 +303,34 @@ class HistoryPeriodView(HomeAssistantView):
             entity_ids = entity_ids.lower().split(',')
         include_start_time_state = 'skip_initial_state' not in request.query
 
-        result = yield from request.app['hass'].async_add_job(
-            get_significant_states, request.app['hass'], start_time, end_time,
+        hass = request.app['hass']
+
+        result = yield from hass.async_add_job(
+            get_significant_states, hass, start_time, end_time,
             entity_ids, self.filters, include_start_time_state)
         result = result.values()
         if _LOGGER.isEnabledFor(logging.DEBUG):
             elapsed = time.perf_counter() - timer_start
             _LOGGER.debug(
                 'Extracted %d states in %fs', sum(map(len, result)), elapsed)
-        return self.json(result)
+
+        # Optionally reorder the result to respect the ordering given
+        # by any entities explicitly included in the configuration.
+
+        if self.use_include_order:
+            result = list(result)
+            sorted_result = []
+            for order_entity in self.filters.included_entities:
+                for state_list in result:
+                    if state_list[0].entity_id == order_entity:
+                        sorted_result.append(state_list)
+                        result.remove(state_list)
+                        break
+            sorted_result.extend(result)
+            result = sorted_result
+
+        response = yield from hass.async_add_job(self.json, result)
+        return response
 
 
 class Filters(object):
