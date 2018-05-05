@@ -71,8 +71,6 @@ class PowerViewScene(Scene):
         self.hass = hass
         self._room_name = None
         self._sync_room_data(room_data)
-        self.entity_id = async_generate_entity_id(
-            ENTITY_ID_FORMAT, str(self._scene.id), hass=hass)
 
     def _sync_room_data(self, room_data):
         """Sync room data."""
