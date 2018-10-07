@@ -15,6 +15,7 @@ from homeassistant.setup import async_prepare_setup_platform
 from homeassistant.core import callback
 from homeassistant.loader import bind_hass
 from homeassistant.components import group, zone
+from homeassistant.components.zone.zone import async_active_zone
 from homeassistant.config import load_yaml_config_file, async_log_exception
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_per_platform, discovery
@@ -23,8 +24,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import async_get_last_state
 from homeassistant.helpers.typing import GPSType, ConfigType, HomeAssistantType
 import homeassistant.helpers.config_validation as cv
-from homeassistant.loader import get_component
-import homeassistant.util as util
+from homeassistant import util
 from homeassistant.util.async_ import run_coroutine_threadsafe
 import homeassistant.util.dt as dt_util
 from homeassistant.util.yaml import dump
@@ -33,7 +33,7 @@ from homeassistant.helpers.event import async_track_utc_time_change
 from homeassistant.const import (
     ATTR_GPS_ACCURACY, ATTR_LATITUDE, ATTR_LONGITUDE, CONF_NAME, CONF_MAC,
     DEVICE_DEFAULT_NAME, STATE_HOME, STATE_NOT_HOME, ATTR_ENTITY_ID,
-    CONF_ICON, ATTR_ICON)
+    CONF_ICON, ATTR_ICON, ATTR_NAME)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,7 +71,6 @@ ATTR_GPS = 'gps'
 ATTR_HOST_NAME = 'host_name'
 ATTR_LOCATION_NAME = 'location_name'
 ATTR_MAC = 'mac'
-ATTR_NAME = 'name'
 ATTR_SOURCE_TYPE = 'source_type'
 ATTR_CONSIDER_HOME = 'consider_home'
 
@@ -232,7 +231,7 @@ def async_setup(hass: HomeAssistantType, config: ConfigType):
     return True
 
 
-class DeviceTracker(object):
+class DeviceTracker:
     """Representation of a device tracker."""
 
     def __init__(self, hass: HomeAssistantType, consider_home: timedelta,
@@ -321,7 +320,7 @@ class DeviceTracker(object):
         # During init, we ignore the group
         if self.group and self.track_new:
             self.group.async_set_group(
-                self.hass, util.slugify(GROUP_NAME_ALL_DEVICES), visible=False,
+                util.slugify(GROUP_NAME_ALL_DEVICES), visible=False,
                 name=GROUP_NAME_ALL_DEVICES, add=[device.entity_id])
 
         self.hass.bus.async_fire(EVENT_NEW_DEVICE, {
@@ -331,19 +330,18 @@ class DeviceTracker(object):
         })
 
         # update known_devices.yaml
-        self.hass.async_add_job(
+        self.hass.async_create_task(
             self.async_update_config(
                 self.hass.config.path(YAML_DEVICES), dev_id, device)
         )
 
-    @asyncio.coroutine
-    def async_update_config(self, path, dev_id, device):
+    async def async_update_config(self, path, dev_id, device):
         """Add device to YAML configuration file.
 
         This method is a coroutine.
         """
-        with (yield from self._is_updating):
-            yield from self.hass.async_add_job(
+        async with self._is_updating:
+            await self.hass.async_add_executor_job(
                 update_config, self.hass.config.path(YAML_DEVICES),
                 dev_id, device)
 
@@ -356,9 +354,9 @@ class DeviceTracker(object):
         entity_ids = [dev.entity_id for dev in self.devices.values()
                       if dev.track]
 
-        self.group = get_component('group')
+        self.group = self.hass.components.group
         self.group.async_set_group(
-            self.hass, util.slugify(GROUP_NAME_ALL_DEVICES), visible=False,
+            util.slugify(GROUP_NAME_ALL_DEVICES), visible=False,
             name=GROUP_NAME_ALL_DEVICES, entity_ids=entity_ids)
 
     @callback
@@ -538,10 +536,10 @@ class Device(Entity):
         """
         if not self.last_seen:
             return
-        elif self.location_name:
+        if self.location_name:
             self._state = self.location_name
         elif self.gps is not None and self.source_type == SOURCE_TYPE_GPS:
-            zone_state = zone.async_active_zone(
+            zone_state = async_active_zone(
                 self.hass, self.gps[0], self.gps[1], self.gps_accuracy)
             if zone_state is None:
                 self._state = STATE_NOT_HOME
@@ -578,7 +576,7 @@ class Device(Entity):
                         state.attributes[ATTR_LONGITUDE])
 
 
-class DeviceScanner(object):
+class DeviceScanner:
     """Device scanner object."""
 
     hass = None  # type: HomeAssistantType
@@ -682,8 +680,7 @@ def async_setup_scanner_platform(hass: HomeAssistantType, config: ConfigType,
     # Initial scan of each mac we also tell about host name for config
     seen = set()  # type: Any
 
-    @asyncio.coroutine
-    def async_device_tracker_scan(now: dt_util.dt.datetime):
+    async def async_device_tracker_scan(now: dt_util.dt.datetime):
         """Handle interval matches."""
         if update_lock.locked():
             _LOGGER.warning(
@@ -691,18 +688,18 @@ def async_setup_scanner_platform(hass: HomeAssistantType, config: ConfigType,
                 "scan interval %s", platform, interval)
             return
 
-        with (yield from update_lock):
-            found_devices = yield from scanner.async_scan_devices()
+        async with update_lock:
+            found_devices = await scanner.async_scan_devices()
 
         for mac in found_devices:
             if mac in seen:
                 host_name = None
             else:
-                host_name = yield from scanner.async_get_device_name(mac)
+                host_name = await scanner.async_get_device_name(mac)
                 seen.add(mac)
 
             try:
-                extra_attributes = (yield from
+                extra_attributes = (await
                                     scanner.async_get_extra_attributes(mac))
             except NotImplementedError:
                 extra_attributes = dict()

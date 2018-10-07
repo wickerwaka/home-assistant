@@ -2,21 +2,29 @@
 import asyncio
 import unittest
 from unittest import mock
-import socket
 import ssl
 
+import pytest
 import voluptuous as vol
 
 from homeassistant.core import callback
 from homeassistant.setup import async_setup_component
-import homeassistant.components.mqtt as mqtt
+from homeassistant.components import mqtt
 from homeassistant.const import (EVENT_CALL_SERVICE, ATTR_DOMAIN, ATTR_SERVICE,
                                  EVENT_HOMEASSISTANT_STOP)
 
 from tests.common import (get_test_home_assistant, mock_coro,
                           mock_mqtt_component,
                           threadsafe_coroutine_factory, fire_mqtt_message,
-                          async_fire_mqtt_message)
+                          async_fire_mqtt_message, MockConfigEntry)
+
+
+@pytest.fixture
+def mock_MQTT():
+    """Make sure connection is established."""
+    with mock.patch('homeassistant.components.mqtt.MQTT') as mock_MQTT:
+        mock_MQTT.return_value.async_connect.return_value = mock_coro(True)
+        yield mock_MQTT
 
 
 @asyncio.coroutine
@@ -45,7 +53,7 @@ class TestMQTTComponent(unittest.TestCase):
     """Test the MQTT component."""
 
     def setUp(self):  # pylint: disable=invalid-name
-        """Setup things to be run when tests are started."""
+        """Set up things to be run when tests are started."""
         self.hass = get_test_home_assistant()
         mock_mqtt_component(self.hass)
         self.calls = []
@@ -56,7 +64,7 @@ class TestMQTTComponent(unittest.TestCase):
 
     @callback
     def record_calls(self, *args):
-        """Helper for recording calls."""
+        """Record calls."""
         self.calls.append(args)
 
     def aiohttp_client_stops_on_home_assistant_start(self):
@@ -131,10 +139,56 @@ class TestMQTTComponent(unittest.TestCase):
             self.hass.data['mqtt'].async_publish.call_args[0][2], 2)
         self.assertFalse(self.hass.data['mqtt'].async_publish.call_args[0][3])
 
-    def test_invalid_mqtt_topics(self):
-        """Test invalid topics."""
+    def test_validate_topic(self):
+        """Test topic name/filter validation."""
+        # Invalid UTF-8, must not contain U+D800 to U+DFFF.
+        self.assertRaises(vol.Invalid, mqtt.valid_topic, '\ud800')
+        self.assertRaises(vol.Invalid, mqtt.valid_topic, '\udfff')
+        # Topic MUST NOT be empty
+        self.assertRaises(vol.Invalid, mqtt.valid_topic, '')
+        # Topic MUST NOT be longer than 65535 encoded bytes.
+        self.assertRaises(vol.Invalid, mqtt.valid_topic, 'ü' * 32768)
+        # UTF-8 MUST NOT include null character
+        self.assertRaises(vol.Invalid, mqtt.valid_topic, 'bad\0one')
+
+        # Topics "SHOULD NOT" include these special characters
+        # (not MUST NOT, RFC2119). The receiver MAY close the connection.
+        mqtt.valid_topic('\u0001')
+        mqtt.valid_topic('\u001F')
+        mqtt.valid_topic('\u009F')
+        mqtt.valid_topic('\u009F')
+        mqtt.valid_topic('\uffff')
+
+    def test_validate_subscribe_topic(self):
+        """Test invalid subscribe topics."""
+        mqtt.valid_subscribe_topic('#')
+        mqtt.valid_subscribe_topic('sport/#')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'sport/#/')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'foo/bar#')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'foo/#/bar')
+
+        mqtt.valid_subscribe_topic('+')
+        mqtt.valid_subscribe_topic('+/tennis/#')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'sport+')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'sport+/')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'sport/+1')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'sport/+#')
+        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'bad+topic')
+        mqtt.valid_subscribe_topic('sport/+/player1')
+        mqtt.valid_subscribe_topic('/finance')
+        mqtt.valid_subscribe_topic('+/+')
+        mqtt.valid_subscribe_topic('$SYS/#')
+
+    def test_validate_publish_topic(self):
+        """Test invalid publish topics."""
+        self.assertRaises(vol.Invalid, mqtt.valid_publish_topic, 'pub+')
+        self.assertRaises(vol.Invalid, mqtt.valid_publish_topic, 'pub/+')
+        self.assertRaises(vol.Invalid, mqtt.valid_publish_topic, '1#')
         self.assertRaises(vol.Invalid, mqtt.valid_publish_topic, 'bad+topic')
-        self.assertRaises(vol.Invalid, mqtt.valid_subscribe_topic, 'bad\0one')
+        mqtt.valid_publish_topic('//')
+
+        # Topic names beginning with $ SHOULD NOT be used, but can
+        mqtt.valid_publish_topic('$SYS/')
 
 
 # pylint: disable=invalid-name
@@ -142,7 +196,7 @@ class TestMQTTCallbacks(unittest.TestCase):
     """Test the MQTT callbacks."""
 
     def setUp(self):  # pylint: disable=invalid-name
-        """Setup things to be run when tests are started."""
+        """Set up things to be run when tests are started."""
         self.hass = get_test_home_assistant()
         mock_mqtt_client(self.hass)
         self.calls = []
@@ -153,7 +207,7 @@ class TestMQTTCallbacks(unittest.TestCase):
 
     @callback
     def record_calls(self, *args):
-        """Helper for recording calls."""
+        """Record calls."""
         self.calls.append(args)
 
     def aiohttp_client_starts_on_home_assistant_mqtt_setup(self):
@@ -227,6 +281,15 @@ class TestMQTTCallbacks(unittest.TestCase):
         mqtt.subscribe(self.hass, 'test-topic/+/on', self.record_calls)
 
         fire_mqtt_message(self.hass, 'test-topic/bier', 'test-payload')
+
+        self.hass.block_till_done()
+        self.assertEqual(0, len(self.calls))
+
+    def test_subscribe_topic_level_wildcard_root_topic_no_subtree_match(self):
+        """Test the subscription of wildcard topics."""
+        mqtt.subscribe(self.hass, 'test-topic/#', self.record_calls)
+
+        fire_mqtt_message(self.hass, 'test-topic-123', 'test-payload')
 
         self.hass.block_till_done()
         self.assertEqual(0, len(self.calls))
@@ -478,64 +541,59 @@ def test_setup_embedded_with_embedded(hass):
         assert _start.call_count == 1
 
 
-@asyncio.coroutine
-def test_setup_fails_if_no_connect_broker(hass):
+async def test_setup_fails_if_no_connect_broker(hass):
     """Test for setup failure if connection to broker is missing."""
-    test_broker_cfg = {mqtt.DOMAIN: {mqtt.CONF_BROKER: 'test-broker'}}
-
-    with mock.patch('homeassistant.components.mqtt.MQTT',
-                    side_effect=socket.error()):
-        result = yield from async_setup_component(hass, mqtt.DOMAIN,
-                                                  test_broker_cfg)
-        assert not result
+    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={
+        mqtt.CONF_BROKER: 'test-broker'
+    })
 
     with mock.patch('paho.mqtt.client.Client') as mock_client:
         mock_client().connect = lambda *args: 1
-        result = yield from async_setup_component(hass, mqtt.DOMAIN,
-                                                  test_broker_cfg)
-        assert not result
+        assert not await mqtt.async_setup_entry(hass, entry)
 
 
-@asyncio.coroutine
-def test_setup_uses_certificate_on_certificate_set_to_auto(hass):
+async def test_setup_uses_certificate_on_certificate_set_to_auto(
+        hass, mock_MQTT):
     """Test setup uses bundled certs when certificate is set to auto."""
-    test_broker_cfg = {mqtt.DOMAIN: {mqtt.CONF_BROKER: 'test-broker',
-                                     'certificate': 'auto'}}
+    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={
+        mqtt.CONF_BROKER: 'test-broker',
+        'certificate': 'auto'
+    })
 
-    with mock.patch('homeassistant.components.mqtt.MQTT') as mock_MQTT:
-        yield from async_setup_component(hass, mqtt.DOMAIN, test_broker_cfg)
+    assert await mqtt.async_setup_entry(hass, entry)
 
     assert mock_MQTT.called
 
     import requests.certs
     expectedCertificate = requests.certs.where()
-    assert mock_MQTT.mock_calls[0][1][7] == expectedCertificate
+    assert mock_MQTT.mock_calls[0][2]['certificate'] == expectedCertificate
 
 
-@asyncio.coroutine
-def test_setup_does_not_use_certificate_on_mqtts_port(hass):
-    """Test setup doesn't use bundled certs when certificate is not set."""
-    test_broker_cfg = {mqtt.DOMAIN: {mqtt.CONF_BROKER: 'test-broker',
-                                     'port': 8883}}
+async def test_setup_does_not_use_certificate_on_mqtts_port(hass, mock_MQTT):
+    """Test setup doesn't use bundled certs when ssl set."""
+    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={
+        mqtt.CONF_BROKER: 'test-broker',
+        'port': 8883
+    })
 
-    with mock.patch('homeassistant.components.mqtt.MQTT') as mock_MQTT:
-        yield from async_setup_component(hass, mqtt.DOMAIN, test_broker_cfg)
+    assert await mqtt.async_setup_entry(hass, entry)
 
     assert mock_MQTT.called
-    assert mock_MQTT.mock_calls[0][1][2] == 8883
+    assert mock_MQTT.mock_calls[0][2]['port'] == 8883
 
     import requests.certs
     mqttsCertificateBundle = requests.certs.where()
-    assert mock_MQTT.mock_calls[0][1][7] != mqttsCertificateBundle
+    assert mock_MQTT.mock_calls[0][2]['port'] != mqttsCertificateBundle
 
 
-@asyncio.coroutine
-def test_setup_without_tls_config_uses_tlsv1_under_python36(hass):
+async def test_setup_without_tls_config_uses_tlsv1_under_python36(
+        hass, mock_MQTT):
     """Test setup defaults to TLSv1 under python3.6."""
-    test_broker_cfg = {mqtt.DOMAIN: {mqtt.CONF_BROKER: 'test-broker'}}
+    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={
+        mqtt.CONF_BROKER: 'test-broker',
+    })
 
-    with mock.patch('homeassistant.components.mqtt.MQTT') as mock_MQTT:
-        yield from async_setup_component(hass, mqtt.DOMAIN, test_broker_cfg)
+    assert await mqtt.async_setup_entry(hass, entry)
 
     assert mock_MQTT.called
 
@@ -545,34 +603,35 @@ def test_setup_without_tls_config_uses_tlsv1_under_python36(hass):
     else:
         expectedTlsVersion = ssl.PROTOCOL_TLSv1
 
-    assert mock_MQTT.mock_calls[0][1][14] == expectedTlsVersion
+    assert mock_MQTT.mock_calls[0][2]['tls_version'] == expectedTlsVersion
 
 
-@asyncio.coroutine
-def test_setup_with_tls_config_uses_tls_version1_2(hass):
+async def test_setup_with_tls_config_uses_tls_version1_2(hass, mock_MQTT):
     """Test setup uses specified TLS version."""
-    test_broker_cfg = {mqtt.DOMAIN: {mqtt.CONF_BROKER: 'test-broker',
-                                     'tls_version': '1.2'}}
+    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={
+        mqtt.CONF_BROKER: 'test-broker',
+        'tls_version': '1.2'
+    })
 
-    with mock.patch('homeassistant.components.mqtt.MQTT') as mock_MQTT:
-        yield from async_setup_component(hass, mqtt.DOMAIN, test_broker_cfg)
+    assert await mqtt.async_setup_entry(hass, entry)
 
     assert mock_MQTT.called
 
-    assert mock_MQTT.mock_calls[0][1][14] == ssl.PROTOCOL_TLSv1_2
+    assert mock_MQTT.mock_calls[0][2]['tls_version'] == ssl.PROTOCOL_TLSv1_2
 
 
-@asyncio.coroutine
-def test_setup_with_tls_config_of_v1_under_python36_only_uses_v1(hass):
+async def test_setup_with_tls_config_of_v1_under_python36_only_uses_v1(
+        hass, mock_MQTT):
     """Test setup uses TLSv1.0 if explicitly chosen."""
-    test_broker_cfg = {mqtt.DOMAIN: {mqtt.CONF_BROKER: 'test-broker',
-                                     'tls_version': '1.0'}}
+    entry = MockConfigEntry(domain=mqtt.DOMAIN, data={
+        mqtt.CONF_BROKER: 'test-broker',
+        'tls_version': '1.0'
+    })
 
-    with mock.patch('homeassistant.components.mqtt.MQTT') as mock_MQTT:
-        yield from async_setup_component(hass, mqtt.DOMAIN, test_broker_cfg)
+    assert await mqtt.async_setup_entry(hass, entry)
 
     assert mock_MQTT.called
-    assert mock_MQTT.mock_calls[0][1][14] == ssl.PROTOCOL_TLSv1
+    assert mock_MQTT.mock_calls[0][2]['tls_version'] == ssl.PROTOCOL_TLSv1
 
 
 @asyncio.coroutine
@@ -616,3 +675,8 @@ def test_mqtt_subscribes_topics_on_connect(hass):
     }
     calls = {call[1][1]: call[1][2] for call in hass.add_job.mock_calls}
     assert calls == expected
+
+
+async def test_setup_fails_without_config(hass):
+    """Test if the MQTT component fails to load with no config."""
+    assert not await async_setup_component(hass, mqtt.DOMAIN, {})

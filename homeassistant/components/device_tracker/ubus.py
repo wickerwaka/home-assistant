@@ -56,7 +56,7 @@ def _refresh_on_access_denied(func):
         try:
             return func(self, *args, **kwargs)
         except PermissionError:
-            _LOGGER.warning("Invalid session detected." +
+            _LOGGER.warning("Invalid session detected."
                             " Trying to refresh session_id and re-run RPC")
             self.session_id = _get_session_id(
                 self.url, self.username, self.password)
@@ -207,7 +207,7 @@ def _req_json_rpc(url, session_id, rpcmethod, subsystem, method, **params):
     try:
         res = requests.post(url, data=data, timeout=5)
 
-    except requests.exceptions.Timeout:
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         return
 
     if res.status_code == 200:

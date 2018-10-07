@@ -20,7 +20,7 @@ from homeassistant.const import (
     STATE_HOME, STATE_NOT_HOME, CONF_PLATFORM, ATTR_ICON)
 import homeassistant.components.device_tracker as device_tracker
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.remote import JSONEncoder
+from homeassistant.helpers.json import JSONEncoder
 
 from tests.common import (
     get_test_home_assistant, fire_time_changed,
@@ -39,7 +39,7 @@ class TestComponentsDeviceTracker(unittest.TestCase):
 
     # pylint: disable=invalid-name
     def setUp(self):
-        """Setup things to be run when tests are started."""
+        """Set up things to be run when tests are started."""
         self.hass = get_test_home_assistant()
         self.yaml_devices = self.hass.config.path(device_tracker.YAML_DEVICES)
 
@@ -189,7 +189,7 @@ class TestComponentsDeviceTracker(unittest.TestCase):
 
     def test_update_stale(self):
         """Test stalled update."""
-        scanner = get_component('device_tracker.test').SCANNER
+        scanner = get_component(self.hass, 'device_tracker.test').SCANNER
         scanner.reset()
         scanner.come_home('DEV1')
 
@@ -251,7 +251,7 @@ class TestComponentsDeviceTracker(unittest.TestCase):
             hide_if_away=True)
         device_tracker.update_config(self.yaml_devices, dev_id, device)
 
-        scanner = get_component('device_tracker.test').SCANNER
+        scanner = get_component(self.hass, 'device_tracker.test').SCANNER
         scanner.reset()
 
         with assert_setup_component(1, device_tracker.DOMAIN):
@@ -270,7 +270,7 @@ class TestComponentsDeviceTracker(unittest.TestCase):
             hide_if_away=True)
         device_tracker.update_config(self.yaml_devices, dev_id, device)
 
-        scanner = get_component('device_tracker.test').SCANNER
+        scanner = get_component(self.hass, 'device_tracker.test').SCANNER
         scanner.reset()
 
         with assert_setup_component(1, device_tracker.DOMAIN):
@@ -323,7 +323,7 @@ class TestComponentsDeviceTracker(unittest.TestCase):
 
         @callback
         def listener(event):
-            """Helper method that will verify our event got called."""
+            """Record that our event got called."""
             test_events.append(event)
 
         self.hass.bus.listen("device_tracker_new_device", listener)
@@ -431,7 +431,7 @@ class TestComponentsDeviceTracker(unittest.TestCase):
                 'zone': zone_info
             })
 
-        scanner = get_component('device_tracker.test').SCANNER
+        scanner = get_component(self.hass, 'device_tracker.test').SCANNER
         scanner.reset()
         scanner.come_home('dev1')
 
@@ -547,7 +547,7 @@ def test_bad_platform(hass):
 
 async def test_adding_unknown_device_to_config(mock_device_tracker_conf, hass):
     """Test the adding of unknown devices to configuration file."""
-    scanner = get_component('device_tracker.test').SCANNER
+    scanner = get_component(hass, 'device_tracker.test').SCANNER
     scanner.reset()
     scanner.come_home('DEV1')
 
