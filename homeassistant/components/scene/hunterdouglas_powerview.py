@@ -13,9 +13,10 @@ from homeassistant.components.scene import Scene, DOMAIN
 from homeassistant.const import CONF_PLATFORM
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.entity import async_generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
-REQUIREMENTS = ['aiopvapi==1.5.4']
+REQUIREMENTS = ['aiopvapi==1.6.6']
 
 ENTITY_ID_FORMAT = DOMAIN + '.{}'
 HUB_ADDRESS = 'address'
@@ -39,25 +40,24 @@ STATE_ATTRIBUTE_ROOM_NAME = 'roomName'
 def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     """Set up home assistant scene entries."""
     # from aiopvapi.hub import Hub
+    from aiopvapi.helpers.aiorequest import AioRequest
     from aiopvapi.scenes import Scenes
     from aiopvapi.rooms import Rooms
     from aiopvapi.resources.scene import Scene as PvScene
 
     hub_address = config.get(HUB_ADDRESS)
     websession = async_get_clientsession(hass)
+    request = AioRequest(hub_address, hass.loop, websession)
 
-    _scenes = yield from Scenes(
-        hub_address, hass.loop, websession).get_resources()
-    _rooms = yield from Rooms(
-        hub_address, hass.loop, websession).get_resources()
+    _scenes = yield from Scenes(request).get_resources()
+    _rooms = yield from Rooms(request).get_resources()
 
     if not _scenes or not _rooms:
         _LOGGER.error(
             "Unable to initialize PowerView hub: %s", hub_address)
         return
     pvscenes = (PowerViewScene(hass,
-                               PvScene(_raw_scene, hub_address, hass.loop,
-                                       websession), _rooms)
+                               PvScene(_raw_scene, request), _rooms)
                 for _raw_scene in _scenes[SCENE_DATA])
     async_add_devices(pvscenes)
 
@@ -71,6 +71,8 @@ class PowerViewScene(Scene):
         self.hass = hass
         self._room_name = None
         self._sync_room_data(room_data)
+        self.entity_id = async_generate_entity_id(
+            ENTITY_ID_FORMAT, str(self._scene.id), hass=hass)
 
     def _sync_room_data(self, room_data):
         """Sync room data."""
@@ -94,6 +96,7 @@ class PowerViewScene(Scene):
         """Icon to use in the frontend."""
         return 'mdi:blinds'
 
+    @asyncio.coroutine
     def async_activate(self):
         """Activate scene. Try to get entities into requested state."""
         yield from self._scene.activate()
