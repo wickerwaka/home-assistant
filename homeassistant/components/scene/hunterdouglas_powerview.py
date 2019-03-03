@@ -1,21 +1,16 @@
-"""
-Support for Powerview scenes from a Powerview hub.
-
-For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/scene.hunterdouglas_powerview/
-"""
+"""Support for Powerview scenes from a Powerview hub."""
 import logging
 
 import voluptuous as vol
 
+import homeassistant.helpers.config_validation as cv
 from homeassistant.components.scene import Scene, DOMAIN
 from homeassistant.const import CONF_PLATFORM
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import async_generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
-REQUIREMENTS = ['aiopvapi==1.6.6']
+REQUIREMENTS = ['aiopvapi==1.6.14']
 
 ENTITY_ID_FORMAT = DOMAIN + '.{}'
 HUB_ADDRESS = 'address'
@@ -24,6 +19,7 @@ PLATFORM_SCHEMA = vol.Schema({
     vol.Required(CONF_PLATFORM): 'hunterdouglas_powerview',
     vol.Required(HUB_ADDRESS): cv.string,
 })
+
 
 SCENE_DATA = 'sceneData'
 ROOM_DATA = 'roomData'
@@ -48,17 +44,17 @@ async def async_setup_platform(hass, config, async_add_entities,
     websession = async_get_clientsession(hass)
     request = AioRequest(hub_address, hass.loop, websession)
 
-    _scenes = await Scenes(
-        hub_address, hass.loop, websession).get_resources()
-    _rooms = await Rooms(
-        hub_address, hass.loop, websession).get_resources()
+    pv_request = AioRequest(hub_address, loop=hass.loop, websession=websession)
+
+    _scenes = await Scenes(pv_request).get_resources()
+    _rooms = await Rooms(pv_request).get_resources()
 
     if not _scenes or not _rooms:
         _LOGGER.error(
             "Unable to initialize PowerView hub: %s", hub_address)
         return
     pvscenes = (PowerViewScene(hass,
-                               PvScene(_raw_scene, request), _rooms)
+                               PvScene(_raw_scene, pv_request), _rooms)
                 for _raw_scene in _scenes[SCENE_DATA])
     async_add_entities(pvscenes)
 
@@ -97,7 +93,6 @@ class PowerViewScene(Scene):
         """Icon to use in the frontend."""
         return 'mdi:blinds'
 
-    @asyncio.coroutine
-    def async_activate(self):
+    async def async_activate(self):
         """Activate scene. Try to get entities into requested state."""
-        yield from self._scene.activate()
+        await self._scene.activate()
