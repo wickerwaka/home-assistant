@@ -3,13 +3,13 @@ import logging
 import re
 
 import homeassistant.components.alarm_control_panel as alarm
-from homeassistant.components.simplisafe.const import (
-    DATA_CLIENT, DOMAIN, TOPIC_UPDATE)
 from homeassistant.const import (
     CONF_CODE, STATE_ALARM_ARMED_AWAY, STATE_ALARM_ARMED_HOME,
     STATE_ALARM_DISARMED)
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+from .const import DATA_CLIENT, DOMAIN, TOPIC_UPDATE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -118,8 +118,6 @@ class SimpliSafeAlarm(alarm.AlarmControlPanel):
     async def async_update(self):
         """Update alarm status."""
         from simplipy.system import SystemStates
-
-        await self._system.update()
 
         self._attrs[ATTR_ALARM_ACTIVE] = self._system.alarm_going_off
         if self._system.temperature:

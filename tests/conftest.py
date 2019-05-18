@@ -42,8 +42,10 @@ def check_real(func):
 
 
 # Guard a few functions that would make network connections
-location.detect_location_info = check_real(location.detect_location_info)
-location.elevation = check_real(location.elevation)
+location.async_detect_location_info = \
+    check_real(location.async_detect_location_info)
+location.async_get_elevation = \
+    check_real(location.async_get_elevation)
 util.get_local_ip = lambda: '127.0.0.1'
 
 
@@ -153,10 +155,12 @@ def legacy_auth(hass):
     """Load legacy API password provider."""
     prv = legacy_api_password.LegacyApiPasswordAuthProvider(
         hass, hass.auth._store, {
-            'type': 'legacy_api_password'
+            'type': 'legacy_api_password',
+            'api_password': 'test-password',
         }
     )
     hass.auth._providers[(prv.type, prv.id)] = prv
+    return prv
 
 
 @pytest.fixture
@@ -168,6 +172,7 @@ def local_auth(hass):
         }
     )
     hass.auth._providers[(prv.type, prv.id)] = prv
+    return prv
 
 
 @pytest.fixture

@@ -6,15 +6,12 @@ import time
 from homeassistant.const import (
     EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP)
 
-REQUIREMENTS = ['raspihats==2.2.3', 'smbus-cffi==0.5.1']
-
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = 'raspihats'
 
 CONF_I2C_HATS = 'i2c_hats'
 CONF_BOARD = 'board'
-CONF_ADDRESS = 'address'
 CONF_CHANNELS = 'channels'
 CONF_INDEX = 'index'
 CONF_INVERT_LOGIC = 'invert_logic'

@@ -1,18 +1,13 @@
-"""
-Support for Google Calendar Search binary sensors.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/calendar.google/
-"""
-import logging
+"""Support for Google Calendar Search binary sensors."""
 from datetime import timedelta
+import logging
 
 from homeassistant.components.calendar import CalendarEventDevice
-from homeassistant.components.google import (
-    CONF_CAL_ID, CONF_ENTITIES, CONF_TRACK, TOKEN_FILE,
-    CONF_IGNORE_AVAILABILITY, CONF_SEARCH,
-    GoogleCalendarService)
 from homeassistant.util import Throttle, dt
+
+from . import (
+    CONF_CAL_ID, CONF_ENTITIES, CONF_IGNORE_AVAILABILITY, CONF_SEARCH,
+    CONF_TRACK, TOKEN_FILE, CONF_MAX_RESULTS, GoogleCalendarService)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +41,8 @@ class GoogleCalendarEventDevice(CalendarEventDevice):
         """Create the Calendar event device."""
         self.data = GoogleCalendarData(calendar_service, calendar,
                                        data.get(CONF_SEARCH),
-                                       data.get(CONF_IGNORE_AVAILABILITY))
+                                       data.get(CONF_IGNORE_AVAILABILITY),
+                                       data.get(CONF_MAX_RESULTS))
 
         super().__init__(hass, data)
 
@@ -59,12 +55,13 @@ class GoogleCalendarData:
     """Class to utilize calendar service object to get next event."""
 
     def __init__(self, calendar_service, calendar_id, search,
-                 ignore_availability):
+                 ignore_availability, max_results):
         """Set up how we are going to search the google calendar."""
         self.calendar_service = calendar_service
         self.calendar_id = calendar_id
         self.search = search
         self.ignore_availability = ignore_availability
+        self.max_results = max_results
         self.event = None
 
     def _prepare_query(self):
@@ -75,9 +72,11 @@ class GoogleCalendarData:
             service = self.calendar_service.get()
         except ServerNotFoundError:
             _LOGGER.warning("Unable to connect to Google, using cached data")
-            return False
+            return None, None
         params = dict(DEFAULT_GOOGLE_SEARCH_PARAMS)
         params['calendarId'] = self.calendar_id
+        if self.max_results:
+            params['maxResults'] = self.max_results
         if self.search:
             params['q'] = self.search
 
@@ -85,12 +84,16 @@ class GoogleCalendarData:
 
     async def async_get_events(self, hass, start_date, end_date):
         """Get all events in a specific time frame."""
-        service, params = await hass.async_add_job(self._prepare_query)
+        service, params = await hass.async_add_executor_job(
+            self._prepare_query)
+        if service is None:
+            return
         params['timeMin'] = start_date.isoformat('T')
         params['timeMax'] = end_date.isoformat('T')
 
-        events = await hass.async_add_job(service.events)
-        result = await hass.async_add_job(events.list(**params).execute)
+        events = await hass.async_add_executor_job(service.events)
+        result = await hass.async_add_executor_job(
+            events.list(**params).execute)
 
         items = result.get('items', [])
         event_list = []
@@ -107,6 +110,8 @@ class GoogleCalendarData:
     def update(self):
         """Get the latest data."""
         service, params = self._prepare_query()
+        if service is None:
+            return False
         params['timeMin'] = dt.now().isoformat('T')
 
         events = service.events()

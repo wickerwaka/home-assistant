@@ -9,8 +9,6 @@ from homeassistant.const import (
 from homeassistant.helpers import discovery
 import homeassistant.helpers.config_validation as cv
 
-REQUIREMENTS = ['lakeside==0.11']
-
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = 'eufy'

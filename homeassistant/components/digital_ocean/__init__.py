@@ -8,8 +8,6 @@ from homeassistant.const import CONF_ACCESS_TOKEN
 from homeassistant.util import Throttle
 import homeassistant.helpers.config_validation as cv
 
-REQUIREMENTS = ['python-digitalocean==1.13.2']
-
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_CREATED_AT = 'created_at'
@@ -22,7 +20,8 @@ ATTR_MEMORY = 'memory'
 ATTR_REGION = 'region'
 ATTR_VCPUS = 'vcpus'
 
-CONF_ATTRIBUTION = 'Data provided by Digital Ocean'
+ATTRIBUTION = 'Data provided by Digital Ocean'
+
 CONF_DROPLETS = 'droplets'
 
 DATA_DIGITAL_OCEAN = 'data_do'

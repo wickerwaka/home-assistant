@@ -1,13 +1,11 @@
-"""
-Sensors on Zigbee Home Automation networks.
-
-For more details on this platform, please refer to the documentation
-at https://home-assistant.io/components/sensor.zha/
-"""
+"""Sensors on Zigbee Home Automation networks."""
 import logging
 
+from homeassistant.core import callback
 from homeassistant.components.sensor import DOMAIN
-from homeassistant.const import TEMP_CELSIUS
+from homeassistant.const import (
+    TEMP_CELSIUS, POWER_WATT, ATTR_UNIT_OF_MEASUREMENT
+)
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .core.const import (
     DATA_ZHA, DATA_ZHA_DISPATCHERS, ZHA_DISCOVERY_NEW, HUMIDITY, TEMPERATURE,
@@ -16,15 +14,21 @@ from .core.const import (
     SIGNAL_ATTR_UPDATED, SIGNAL_STATE_ATTR)
 from .entity import ZhaEntity
 
+PARALLEL_UPDATES = 5
 _LOGGER = logging.getLogger(__name__)
-
-DEPENDENCIES = ['zha']
 
 
 # Formatter functions
 def pass_through_formatter(value):
     """No op update function."""
     return value
+
+
+def illuminance_formatter(value):
+    """Convert Illimination data."""
+    if value is None:
+        return None
+    return round(pow(10, ((value - 1) / 10000)), 1)
 
 
 def temperature_formatter(value):
@@ -61,6 +65,7 @@ FORMATTER_FUNC_REGISTRY = {
     TEMPERATURE: temperature_formatter,
     PRESSURE: pressure_formatter,
     ELECTRICAL_MEASUREMENT: active_power_formatter,
+    ILLUMINANCE: illuminance_formatter,
     GENERIC: pass_through_formatter,
 }
 
@@ -69,8 +74,8 @@ UNIT_REGISTRY = {
     TEMPERATURE: TEMP_CELSIUS,
     PRESSURE: 'hPa',
     ILLUMINANCE: 'lx',
-    METERING: 'W',
-    ELECTRICAL_MEASUREMENT: 'W',
+    METERING: POWER_WATT,
+    ELECTRICAL_MEASUREMENT: POWER_WATT,
     GENERIC: None
 }
 
@@ -83,7 +88,7 @@ POLLING_REGISTRY = {
 }
 
 FORCE_UPDATE_REGISTRY = {
-    ELECTRICAL_MEASUREMENT: True
+    ELECTRICAL_MEASUREMENT: False
 }
 
 
@@ -133,22 +138,22 @@ class Sensor(ZhaEntity):
     def __init__(self, unique_id, zha_device, channels, **kwargs):
         """Init this sensor."""
         super().__init__(unique_id, zha_device, channels, **kwargs)
-        sensor_type = kwargs.get(SENSOR_TYPE, GENERIC)
-        self._unit = UNIT_REGISTRY.get(sensor_type)
+        self._sensor_type = kwargs.get(SENSOR_TYPE, GENERIC)
+        self._unit = UNIT_REGISTRY.get(self._sensor_type)
         self._formatter_function = FORMATTER_FUNC_REGISTRY.get(
-            sensor_type,
+            self._sensor_type,
             pass_through_formatter
         )
         self._force_update = FORCE_UPDATE_REGISTRY.get(
-            sensor_type,
+            self._sensor_type,
             False
         )
         self._should_poll = POLLING_REGISTRY.get(
-            sensor_type,
+            self._sensor_type,
             False
         )
         self._channel = self.cluster_channels.get(
-            CHANNEL_REGISTRY.get(sensor_type, ATTRIBUTE_CHANNEL)
+            CHANNEL_REGISTRY.get(self._sensor_type, ATTRIBUTE_CHANNEL)
         )
 
     async def async_added_to_hass(self):
@@ -176,5 +181,15 @@ class Sensor(ZhaEntity):
 
     def async_set_state(self, state):
         """Handle state update from channel."""
+        # this is necessary because HA saves the unit based on what shows in
+        # the UI and not based on what the sensor has configured so we need
+        # to flip it back after state restoration
+        self._unit = UNIT_REGISTRY.get(self._sensor_type)
         self._state = self._formatter_function(state)
         self.async_schedule_update_ha_state()
+
+    @callback
+    def async_restore_last_state(self, last_state):
+        """Restore previous state."""
+        self._state = last_state.state
+        self._unit = last_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)

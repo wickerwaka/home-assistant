@@ -2,8 +2,13 @@
 import asyncio
 import logging
 
+from homematicip.aio.auth import AsyncAuth
+from homematicip.aio.home import AsyncHome
+from homematicip.base.base_connection import HmipConnectionError
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -36,18 +41,13 @@ class HomematicipAuth:
 
     async def async_checkbutton(self):
         """Check blue butten has been pressed."""
-        from homematicip.base.base_connection import HmipConnectionError
-
         try:
-            await self.auth.isRequestAcknowledged()
-            return True
+            return await self.auth.isRequestAcknowledged()
         except HmipConnectionError:
             return False
 
     async def async_register(self):
         """Register client at HomematicIP."""
-        from homematicip.base.base_connection import HmipConnectionError
-
         try:
             authtoken = await self.auth.requestAuthToken()
             await self.auth.confirmAuthToken(authtoken)
@@ -57,9 +57,6 @@ class HomematicipAuth:
 
     async def get_auth(self, hass, hapid, pin):
         """Create a HomematicIP access point object."""
-        from homematicip.aio.auth import AsyncAuth
-        from homematicip.base.base_connection import HmipConnectionError
-
         auth = AsyncAuth(hass.loop, async_get_clientsession(hass))
         try:
             await auth.init(hapid)
@@ -74,7 +71,7 @@ class HomematicipAuth:
 class HomematicipHAP:
     """Manages HomematicIP HTTP and WebSocket connection."""
 
-    def __init__(self, hass, config_entry):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize HomematicIP Cloud connection."""
         self.hass = hass
         self.config_entry = config_entry
@@ -85,7 +82,7 @@ class HomematicipHAP:
         self._tries = 0
         self._accesspoint_connected = True
 
-    async def async_setup(self, tries=0):
+    async def async_setup(self, tries: int = 0):
         """Initialize connection."""
         try:
             self.home = await self.get_hap(
@@ -139,8 +136,6 @@ class HomematicipHAP:
 
     def get_state_finished(self, future):
         """Execute when get_state coroutine has finished."""
-        from homematicip.base.base_connection import HmipConnectionError
-
         try:
             future.result()
         except HmipConnectionError:
@@ -163,8 +158,6 @@ class HomematicipHAP:
 
     async def async_connect(self):
         """Start WebSocket connection."""
-        from homematicip.base.base_connection import HmipConnectionError
-
         tries = 0
         while True:
             retry_delay = 2 ** min(tries, 8)
@@ -204,11 +197,9 @@ class HomematicipHAP:
                 self.config_entry, component)
         return True
 
-    async def get_hap(self, hass, hapid, authtoken, name):
+    async def get_hap(self, hass: HomeAssistant, hapid: str, authtoken: str,
+                      name: str) -> AsyncHome:
         """Create a HomematicIP access point object."""
-        from homematicip.aio.home import AsyncHome
-        from homematicip.base.base_connection import HmipConnectionError
-
         home = AsyncHome(hass.loop, async_get_clientsession(hass))
 
         home.name = name

@@ -1,9 +1,4 @@
-"""Huawei LTE sensors.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/sensor.huawei_lte/
-"""
-
+"""Support for Huawei LTE sensors."""
 import logging
 import re
 
@@ -17,12 +12,9 @@ from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import Entity
 import homeassistant.helpers.config_validation as cv
 
-from ..huawei_lte import DATA_KEY, RouterData
-
+from . import DATA_KEY, RouterData
 
 _LOGGER = logging.getLogger(__name__)
-
-DEPENDENCIES = ['huawei_lte']
 
 DEFAULT_NAME_TEMPLATE = 'Huawei {} {}'
 
@@ -70,37 +62,37 @@ SENSOR_META = {
         name="RSRQ",
         # http://www.lte-anbieter.info/technik/rsrq.php
         icon=lambda x:
-        x >= -5 and "mdi:signal-cellular-3"
-        or x >= -8 and "mdi:signal-cellular-2"
-        or x >= -11 and "mdi:signal-cellular-1"
-        or "mdi:signal-cellular-outline"
+        (x is None or x < -11) and "mdi:signal-cellular-outline"
+        or x < -8 and "mdi:signal-cellular-1"
+        or x < -5 and "mdi:signal-cellular-2"
+        or "mdi:signal-cellular-3"
     ),
     "device_signal.rsrp": dict(
         name="RSRP",
         # http://www.lte-anbieter.info/technik/rsrp.php
         icon=lambda x:
-        x >= -80 and "mdi:signal-cellular-3"
-        or x >= -95 and "mdi:signal-cellular-2"
-        or x >= -110 and "mdi:signal-cellular-1"
-        or "mdi:signal-cellular-outline"
+        (x is None or x < -110) and "mdi:signal-cellular-outline"
+        or x < -95 and "mdi:signal-cellular-1"
+        or x < -80 and "mdi:signal-cellular-2"
+        or "mdi:signal-cellular-3"
     ),
     "device_signal.rssi": dict(
         name="RSSI",
         # https://eyesaas.com/wi-fi-signal-strength/
         icon=lambda x:
-        x >= -60 and "mdi:signal-cellular-3"
-        or x >= -70 and "mdi:signal-cellular-2"
-        or x >= -80 and "mdi:signal-cellular-1"
-        or "mdi:signal-cellular-outline"
+        (x is None or x < -80) and "mdi:signal-cellular-outline"
+        or x < -70 and "mdi:signal-cellular-1"
+        or x < -60 and "mdi:signal-cellular-2"
+        or "mdi:signal-cellular-3"
     ),
     "device_signal.sinr": dict(
         name="SINR",
         # http://www.lte-anbieter.info/technik/sinr.php
         icon=lambda x:
-        x >= 10 and "mdi:signal-cellular-3"
-        or x >= 5 and "mdi:signal-cellular-2"
-        or x >= 0 and "mdi:signal-cellular-1"
-        or "mdi:signal-cellular-outline"
+        (x is None or x < 0) and "mdi:signal-cellular-outline"
+        or x < 5 and "mdi:signal-cellular-1"
+        or x < 10 and "mdi:signal-cellular-2"
+        or "mdi:signal-cellular-3"
     ),
 }
 
@@ -118,8 +110,8 @@ def setup_platform(
     sensors = []
     for path in config.get(CONF_MONITORED_CONDITIONS):
         data.subscribe(path)
-        sensors.append(HuaweiLteSensor(
-            data, path, SENSOR_META.get(path, {})))
+        sensors.append(HuaweiLteSensor(data, path, SENSOR_META.get(path, {})))
+
     add_entities(sensors, True)
 
 

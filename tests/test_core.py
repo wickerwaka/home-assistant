@@ -310,6 +310,7 @@ class TestEvent(unittest.TestCase):
             'time_fired': now,
             'context': {
                 'id': event.context.id,
+                'parent_id': None,
                 'user_id': event.context.user_id,
             },
         }
@@ -726,8 +727,7 @@ class TestServiceRegistry(unittest.TestCase):
         """Test registering and calling an async service."""
         calls = []
 
-        @asyncio.coroutine
-        def service_handler(call):
+        async def service_handler(call):
             """Service handler coroutine."""
             calls.append(call)
 
@@ -743,6 +743,28 @@ class TestServiceRegistry(unittest.TestCase):
                                   blocking=True)
         self.hass.block_till_done()
         assert 1 == len(calls)
+
+    def test_async_service_partial(self):
+        """Test registering and calling an wrapped async service."""
+        calls = []
+
+        async def service_handler(call):
+            """Service handler coroutine."""
+            calls.append(call)
+
+        self.services.register(
+            'test_domain', 'register_calls',
+            functools.partial(service_handler))
+        self.hass.block_till_done()
+
+        assert len(self.calls_register) == 1
+        assert self.calls_register[-1].data['domain'] == 'test_domain'
+        assert self.calls_register[-1].data['service'] == 'register_calls'
+
+        assert self.services.call('test_domain', 'REGISTER_CALLS',
+                                  blocking=True)
+        self.hass.block_till_done()
+        assert len(calls) == 1
 
     def test_callback_service(self):
         """Test registering and calling an async service."""
@@ -802,6 +824,45 @@ class TestServiceRegistry(unittest.TestCase):
         self.services.remove('test_xxx', 'test_yyy')
         self.hass.block_till_done()
         assert len(calls_remove) == 0
+
+    def test_async_service_raise_exception(self):
+        """Test registering and calling an async service raise exception."""
+        async def service_handler(_):
+            """Service handler coroutine."""
+            raise ValueError
+
+        self.services.register(
+            'test_domain', 'register_calls', service_handler)
+        self.hass.block_till_done()
+
+        with pytest.raises(ValueError):
+            assert self.services.call('test_domain', 'REGISTER_CALLS',
+                                      blocking=True)
+            self.hass.block_till_done()
+
+        # Non-blocking service call never throw exception
+        self.services.call('test_domain', 'REGISTER_CALLS', blocking=False)
+        self.hass.block_till_done()
+
+    def test_callback_service_raise_exception(self):
+        """Test registering and calling an callback service raise exception."""
+        @ha.callback
+        def service_handler(_):
+            """Service handler coroutine."""
+            raise ValueError
+
+        self.services.register(
+            'test_domain', 'register_calls', service_handler)
+        self.hass.block_till_done()
+
+        with pytest.raises(ValueError):
+            assert self.services.call('test_domain', 'REGISTER_CALLS',
+                                      blocking=True)
+            self.hass.block_till_done()
+
+        # Non-blocking service call never throw exception
+        self.services.call('test_domain', 'REGISTER_CALLS', blocking=False)
+        self.hass.block_till_done()
 
 
 class TestConfig(unittest.TestCase):
@@ -1028,6 +1089,7 @@ def test_track_task_functions(loop):
 async def test_service_executed_with_subservices(hass):
     """Test we block correctly till all services done."""
     calls = async_mock_service(hass, 'test', 'inner')
+    context = ha.Context()
 
     async def handle_outer(call):
         """Handle outer service call."""
@@ -1041,11 +1103,13 @@ async def test_service_executed_with_subservices(hass):
 
     hass.services.async_register('test', 'outer', handle_outer)
 
-    await hass.services.async_call('test', 'outer', blocking=True)
+    await hass.services.async_call('test', 'outer', blocking=True,
+                                   context=context)
 
     assert len(calls) == 4
     assert [call.service for call in calls] == [
         'outer', 'inner', 'inner', 'outer']
+    assert all(call.context is context for call in calls)
 
 
 async def test_service_call_event_contains_original_data(hass):
@@ -1062,11 +1126,27 @@ async def test_service_call_event_contains_original_data(hass):
         'number': vol.Coerce(int)
     }))
 
+    context = ha.Context()
     await hass.services.async_call('test', 'service', {
         'number': '23'
-    }, blocking=True)
+    }, blocking=True, context=context)
     await hass.async_block_till_done()
     assert len(events) == 1
     assert events[0].data['service_data']['number'] == '23'
+    assert events[0].context is context
     assert len(calls) == 1
     assert calls[0].data['number'] == 23
+    assert calls[0].context is context
+
+
+def test_context():
+    """Test context init."""
+    c = ha.Context()
+    assert c.user_id is None
+    assert c.parent_id is None
+    assert c.id is not None
+
+    c = ha.Context(23, 100)
+    assert c.user_id == 23
+    assert c.parent_id == 100
+    assert c.id is not None

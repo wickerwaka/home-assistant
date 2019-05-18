@@ -7,8 +7,6 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.const import (
     CONF_HOST, CONF_PORT, CONF_NAME, EVENT_HOMEASSISTANT_STOP)
 
-REQUIREMENTS = ['rfk101py==0.0.1']
-
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "idteck_prox"
@@ -37,7 +35,7 @@ def setup(hass, config):
             reader.connect()
             hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, reader.stop)
         except OSError as error:
-            _LOGGER.error('Error creating "%s". %s', name, error)
+            _LOGGER.error("Error creating %s. %s", name, error)
             return False
 
     return True

@@ -1,6 +1,7 @@
 """Code to handle a Hue bridge."""
 import asyncio
 
+import aiohue
 import async_timeout
 import voluptuous as vol
 
@@ -46,7 +47,7 @@ class HueBridge:
             self.api = await get_bridge(
                 hass, host, self.config_entry.data['username'])
         except AuthenticationRequired:
-            # usernames can become invalid if hub is reset or user removed.
+            # Usernames can become invalid if hub is reset or user removed.
             # We are going to fail the config entry setup and initiate a new
             # linking procedure. When linking succeeds, it will remove the
             # old config entry.
@@ -68,6 +69,10 @@ class HueBridge:
 
         hass.async_create_task(hass.config_entries.async_forward_entry_setup(
             self.config_entry, 'light'))
+        hass.async_create_task(hass.config_entries.async_forward_entry_setup(
+            self.config_entry, 'binary_sensor'))
+        hass.async_create_task(hass.config_entries.async_forward_entry_setup(
+            self.config_entry, 'sensor'))
 
         hass.services.async_register(
             DOMAIN, SERVICE_HUE_SCENE, self.hue_activate_scene,
@@ -93,8 +98,16 @@ class HueBridge:
 
         # If setup was successful, we set api variable, forwarded entry and
         # register service
-        return await self.hass.config_entries.async_forward_entry_unload(
-            self.config_entry, 'light')
+        results = await asyncio.gather(
+            self.hass.config_entries.async_forward_entry_unload(
+                self.config_entry, 'light'),
+            self.hass.config_entries.async_forward_entry_unload(
+                self.config_entry, 'binary_sensor'),
+            self.hass.config_entries.async_forward_entry_unload(
+                self.config_entry, 'sensor')
+            )
+        # None and True are OK
+        return False not in results
 
     async def hue_activate_scene(self, call, updated=False):
         """Service to call directly into bridge to set scenes."""
@@ -133,8 +146,6 @@ class HueBridge:
 
 async def get_bridge(hass, host, username=None):
     """Create a bridge object and verify authentication."""
-    import aiohue
-
     bridge = aiohue.Bridge(
         host, username=username,
         websession=aiohttp_client.async_get_clientsession(hass)

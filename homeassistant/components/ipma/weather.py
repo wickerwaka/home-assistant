@@ -1,9 +1,4 @@
-"""
-Support for IPMA weather service.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/weather.ipma/
-"""
+"""Support for IPMA weather service."""
 import logging
 from datetime import timedelta
 
@@ -19,8 +14,6 @@ from homeassistant.const import \
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import Throttle
-
-REQUIREMENTS = ['pyipma==1.2.1']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,13 +47,13 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-async def async_setup_platform(hass, config, async_add_entities,
-                               discovery_info=None):
+async def async_setup_platform(
+        hass, config, async_add_entities, discovery_info=None):
     """Set up the ipma platform.
 
     Deprecated.
     """
-    _LOGGER.warning('Loading IPMA via platform config is deprecated')
+    _LOGGER.warning("Loading IPMA via platform config is deprecated")
 
     latitude = config.get(CONF_LATITUDE, hass.config.latitude)
     longitude = config.get(CONF_LONGITUDE, hass.config.longitude)

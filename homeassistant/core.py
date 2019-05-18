@@ -409,6 +409,10 @@ class Context:
         type=str,
         default=None,
     )
+    parent_id = attr.ib(
+        type=Optional[str],
+        default=None
+    )
     id = attr.ib(
         type=str,
         default=attr.Factory(lambda: uuid.uuid4().hex),
@@ -418,6 +422,7 @@ class Context:
         """Return a dictionary representation of the context."""
         return {
             'id': self.id,
+            'parent_id': self.parent_id,
             'user_id': self.user_id,
         }
 
@@ -823,8 +828,8 @@ class StateMachine:
         """
         return self._states.get(entity_id.lower())
 
-    def is_state(self, entity_id: str, state: State) -> bool:
-        """Test if entity exists and is specified state.
+    def is_state(self, entity_id: str, state: str) -> bool:
+        """Test if entity exists and is in specified state.
 
         Async friendly.
         """
@@ -902,7 +907,7 @@ class StateMachine:
         else:
             same_state = (old_state.state == new_state and
                           not force_update)
-            same_attr = old_state.attributes == attributes
+            same_attr = old_state.attributes == MappingProxyType(attributes)
             last_changed = old_state.last_changed if same_state else None
 
         if same_state and same_attr:
@@ -931,6 +936,9 @@ class Service:
         """Initialize a service."""
         self.func = func
         self.schema = schema
+        # Properly detect wrapped functions
+        while isinstance(func, functools.partial):
+            func = func.func
         self.is_callback = is_callback(func)
         self.is_coroutinefunction = asyncio.iscoroutinefunction(func)
 
@@ -1120,7 +1128,7 @@ class ServiceRegistry:
             ATTR_DOMAIN: domain.lower(),
             ATTR_SERVICE: service.lower(),
             ATTR_SERVICE_DATA: service_data,
-        })
+        }, context=context)
 
         if not blocking:
             self._hass.async_create_task(
@@ -1175,7 +1183,7 @@ class Config:
         # List of loaded components
         self.components = set()  # type: set
 
-        # API (HTTP) server configuration
+        # API (HTTP) server configuration, see components.http.ApiConfig
         self.api = None  # type: Optional[Any]
 
         # Directory that holds the configuration

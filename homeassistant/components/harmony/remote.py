@@ -1,9 +1,4 @@
-"""
-Support for Harmony Hub devices.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/remote.harmony/
-"""
+"""Support for Harmony Hub devices."""
 import asyncio
 import json
 import logging
@@ -12,17 +7,14 @@ import voluptuous as vol
 
 from homeassistant.components import remote
 from homeassistant.components.remote import (
-    ATTR_ACTIVITY, ATTR_DELAY_SECS, ATTR_DEVICE, ATTR_NUM_REPEATS,
-    DEFAULT_DELAY_SECS, DOMAIN, PLATFORM_SCHEMA
-)
+    ATTR_ACTIVITY, ATTR_DELAY_SECS, ATTR_DEVICE, ATTR_HOLD_SECS,
+    ATTR_NUM_REPEATS, DEFAULT_DELAY_SECS, DOMAIN, PLATFORM_SCHEMA)
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_HOST, CONF_NAME, CONF_PORT, EVENT_HOMEASSISTANT_STOP
 )
 import homeassistant.helpers.config_validation as cv
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.util import slugify
-
-REQUIREMENTS = ['aioharmony==0.1.8']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,12 +43,12 @@ HARMONY_SYNC_SCHEMA = vol.Schema({
 
 HARMONY_CHANGE_CHANNEL_SCHEMA = vol.Schema({
     vol.Required(ATTR_ENTITY_ID): cv.entity_ids,
-    vol.Required(ATTR_CHANNEL): cv.positive_int
+    vol.Required(ATTR_CHANNEL): cv.positive_int,
 })
 
 
-async def async_setup_platform(hass, config, async_add_entities,
-                               discovery_info=None):
+async def async_setup_platform(
+        hass, config, async_add_entities, discovery_info=None):
     """Set up the Harmony platform."""
     activity = None
 
@@ -345,8 +337,12 @@ class HarmonyRemote(remote.RemoteDevice):
             _LOGGER.error("%s: Device %s is invalid", self.name, device)
             return
 
-        num_repeats = kwargs.get(ATTR_NUM_REPEATS)
+        num_repeats = kwargs[ATTR_NUM_REPEATS]
         delay_secs = kwargs.get(ATTR_DELAY_SECS, self._delay_secs)
+        hold_secs = kwargs[ATTR_HOLD_SECS]
+        _LOGGER.debug("Sending commands to device %s holding for %s seconds "
+                      "with a delay of %s seconds",
+                      device, hold_secs, delay_secs)
 
         # Creating list of commands to send.
         snd_cmnd_list = []
@@ -355,7 +351,7 @@ class HarmonyRemote(remote.RemoteDevice):
                 send_command = SendCommandDevice(
                     device=device_id,
                     command=single_command,
-                    delay=0
+                    delay=hold_secs
                 )
                 snd_cmnd_list.append(send_command)
                 if delay_secs > 0:
