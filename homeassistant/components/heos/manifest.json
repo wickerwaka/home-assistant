@@ -1,10 +1,16 @@
 {
   "domain": "heos",
   "name": "HEOS",
-  "documentation": "https://www.home-assistant.io/components/heos",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/heos",
   "requirements": [
-    "pyheos==0.5.2"
+    "pyheos==0.6.0"
   ],
+  "ssdp": {
+    "st": [
+      "urn:schemas-denon-com:device:ACT-Denon:1"
+    ]
+  },
   "dependencies": [],
   "codeowners": [
     "@andrewsayre"

@@ -1,9 +1,10 @@
 {
   "domain": "daikin",
   "name": "Daikin",
-  "documentation": "https://www.home-assistant.io/components/daikin",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/daikin",
   "requirements": [
-    "pydaikin==1.4.0"
+    "pydaikin==1.6.1"
   ],
   "dependencies": [],
   "codeowners": [

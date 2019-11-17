@@ -1,9 +1,9 @@
 {
   "domain": "fitbit",
   "name": "Fitbit",
-  "documentation": "https://www.home-assistant.io/components/fitbit",
+  "documentation": "https://www.home-assistant.io/integrations/fitbit",
   "requirements": [
-    "fitbit==0.3.0"
+    "fitbit==0.3.1"
   ],
   "dependencies": [
     "configurator",

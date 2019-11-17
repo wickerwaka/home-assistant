@@ -1,7 +1,8 @@
 {
   "domain": "zwave",
   "name": "Z-Wave",
-  "documentation": "https://www.home-assistant.io/components/zwave",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/zwave",
   "requirements": [
     "homeassistant-pyozw==0.1.4",
     "pydispatcher==2.0.5"

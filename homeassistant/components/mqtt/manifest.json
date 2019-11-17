@@ -1,9 +1,10 @@
 {
   "domain": "mqtt",
   "name": "MQTT",
-  "documentation": "https://www.home-assistant.io/components/mqtt",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/mqtt",
   "requirements": [
-    "hbmqtt==0.9.4",
+    "hbmqtt==0.9.5",
     "paho-mqtt==1.4.0"
   ],
   "dependencies": [

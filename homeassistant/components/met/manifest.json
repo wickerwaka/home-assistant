@@ -1,7 +1,8 @@
 {
   "domain": "met",
   "name": "Met",
-  "documentation": "https://www.home-assistant.io/components/met",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/met",
   "requirements": [
     "pyMetno==0.4.6"
   ],

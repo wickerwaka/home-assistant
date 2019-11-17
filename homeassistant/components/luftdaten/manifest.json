@@ -1,9 +1,10 @@
 {
   "domain": "luftdaten",
   "name": "Luftdaten",
-  "documentation": "https://www.home-assistant.io/components/luftdaten",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/luftdaten",
   "requirements": [
-    "luftdaten==0.3.4"
+    "luftdaten==0.6.3"
   ],
   "dependencies": [],
   "codeowners": [

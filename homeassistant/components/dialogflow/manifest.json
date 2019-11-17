@@ -1,7 +1,8 @@
 {
   "domain": "dialogflow",
   "name": "Dialogflow",
-  "documentation": "https://www.home-assistant.io/components/dialogflow",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/dialogflow",
   "requirements": [],
   "dependencies": [
     "webhook"

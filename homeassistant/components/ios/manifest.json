@@ -1,7 +1,8 @@
 {
   "domain": "ios",
   "name": "Ios",
-  "documentation": "https://www.home-assistant.io/components/ios",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/ios",
   "requirements": [],
   "dependencies": [
     "device_tracker",

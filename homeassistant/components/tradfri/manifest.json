@@ -1,12 +1,13 @@
 {
   "domain": "tradfri",
   "name": "Tradfri",
-  "documentation": "https://www.home-assistant.io/components/tradfri",
-  "requirements": [
-    "pytradfri[async]==6.0.1"
-  ],
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/tradfri",
+  "requirements": ["pytradfri[async]==6.3.1"],
+  "homekit": {
+    "models": ["TRADFRI"]
+  },
   "dependencies": [],
-  "codeowners": [
-    "@ggravlingen"
-  ]
+  "zeroconf": ["_coap._udp.local."],
+  "codeowners": ["@ggravlingen"]
 }

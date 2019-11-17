@@ -1,7 +1,8 @@
 {
   "domain": "geofency",
   "name": "Geofency",
-  "documentation": "https://www.home-assistant.io/components/geofency",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/geofency",
   "requirements": [],
   "dependencies": [
     "webhook"

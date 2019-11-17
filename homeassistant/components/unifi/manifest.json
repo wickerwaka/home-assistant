@@ -1,10 +1,10 @@
 {
   "domain": "unifi",
   "name": "Unifi",
-  "documentation": "https://www.home-assistant.io/components/unifi",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/unifi",
   "requirements": [
-    "aiounifi==4",
-    "pyunifi==2.16"
+    "aiounifi==11"
   ],
   "dependencies": [],
   "codeowners": [

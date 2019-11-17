@@ -1,7 +1,8 @@
 {
   "domain": "ipma",
   "name": "Ipma",
-  "documentation": "https://www.home-assistant.io/components/ipma",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/ipma",
   "requirements": [
     "pyipma==1.2.1"
   ],
