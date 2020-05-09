@@ -1,7 +1,9 @@
 """Provide a mock package component."""
-DOMAIN = 'test_package'
+from .const import TEST  # noqa: F401
+
+DOMAIN = "test_package"
 
 
-def setup(hass, config):
+async def async_setup(hass, config):
     """Mock a successful setup."""
     return True
