@@ -32,7 +32,6 @@ SERVICE_FREEBOX = "freebox"
 SERVICE_HASS_IOS_APP = "hass_ios"
 SERVICE_HASSIO = "hassio"
 SERVICE_HEOS = "heos"
-SERVICE_IGD = "igd"
 SERVICE_KONNECTED = "konnected"
 SERVICE_MOBILE_APP = "hass_mobile_app"
 SERVICE_NETGEAR = "netgear_router"
@@ -48,7 +47,7 @@ SERVICE_XIAOMI_GW = "xiaomi_gw"
 CONFIG_ENTRY_HANDLERS = {
     SERVICE_DAIKIN: "daikin",
     SERVICE_TELLDUSLIVE: "tellduslive",
-    SERVICE_IGD: "upnp",
+    "logitech_mediaserver": "squeezebox",
 }
 
 SERVICE_HANDLERS = {
@@ -59,22 +58,17 @@ SERVICE_HANDLERS = {
     SERVICE_APPLE_TV: ("apple_tv", None),
     SERVICE_ENIGMA2: ("media_player", "enigma2"),
     SERVICE_WINK: ("wink", None),
-    SERVICE_XIAOMI_GW: ("xiaomi_aqara", None),
     SERVICE_SABNZBD: ("sabnzbd", None),
     SERVICE_SAMSUNG_PRINTER: ("sensor", "syncthru"),
     SERVICE_KONNECTED: ("konnected", None),
     SERVICE_OCTOPRINT: ("octoprint", None),
     SERVICE_FREEBOX: ("freebox", None),
     SERVICE_YEELIGHT: ("yeelight", None),
-    "panasonic_viera": ("media_player", "panasonic_viera"),
     "yamaha": ("media_player", "yamaha"),
-    "logitech_mediaserver": ("media_player", "squeezebox"),
-    "denonavr": ("media_player", "denonavr"),
     "frontier_silicon": ("media_player", "frontier_silicon"),
     "openhome": ("media_player", "openhome"),
     "bose_soundtouch": ("media_player", "soundtouch"),
     "bluesound": ("media_player", "bluesound"),
-    "songpal": ("media_player", "songpal"),
     "kodi": ("media_player", "kodi"),
     "volumio": ("media_player", "volumio"),
     "lg_smart_device": ("media_player", "lg_soundbar"),
@@ -86,6 +80,7 @@ OPTIONAL_SERVICE_HANDLERS = {SERVICE_DLNA_DMR: ("media_player", "dlna_dmr")}
 MIGRATED_SERVICE_HANDLERS = [
     "axis",
     "deconz",
+    "denonavr",
     "esphome",
     "google_cast",
     SERVICE_HEOS,
@@ -94,7 +89,9 @@ MIGRATED_SERVICE_HANDLERS = [
     "ikea_tradfri",
     "philips_hue",
     "sonos",
+    "songpal",
     SERVICE_WEMO,
+    SERVICE_XIAOMI_GW,
 ]
 
 DEFAULT_ENABLED = (

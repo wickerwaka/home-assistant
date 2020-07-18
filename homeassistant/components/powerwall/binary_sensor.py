@@ -6,14 +6,11 @@ from tesla_powerwall import GridStatus
 from homeassistant.components.binary_sensor import (
     DEVICE_CLASS_BATTERY_CHARGING,
     DEVICE_CLASS_CONNECTIVITY,
-    BinarySensorDevice,
+    BinarySensorEntity,
 )
 from homeassistant.const import DEVICE_CLASS_POWER
 
 from .const import (
-    ATTR_GRID_CODE,
-    ATTR_NOMINAL_SYSTEM_POWER,
-    ATTR_REGION,
     DOMAIN,
     POWERWALL_API_DEVICE_TYPE,
     POWERWALL_API_GRID_STATUS,
@@ -56,7 +53,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities(entities, True)
 
 
-class PowerWallRunningSensor(PowerWallEntity, BinarySensorDevice):
+class PowerWallRunningSensor(PowerWallEntity, BinarySensorEntity):
     """Representation of an Powerwall running sensor."""
 
     @property
@@ -79,17 +76,8 @@ class PowerWallRunningSensor(PowerWallEntity, BinarySensorDevice):
         """Get the powerwall running state."""
         return self._coordinator.data[POWERWALL_API_SITEMASTER].running
 
-    @property
-    def device_state_attributes(self):
-        """Return the device specific state attributes."""
-        return {
-            ATTR_REGION: self._site_info.region,
-            ATTR_GRID_CODE: self._site_info.grid_code,
-            ATTR_NOMINAL_SYSTEM_POWER: self._site_info.nominal_system_power_kW,
-        }
 
-
-class PowerWallConnectedSensor(PowerWallEntity, BinarySensorDevice):
+class PowerWallConnectedSensor(PowerWallEntity, BinarySensorEntity):
     """Representation of an Powerwall connected sensor."""
 
     @property
@@ -113,7 +101,7 @@ class PowerWallConnectedSensor(PowerWallEntity, BinarySensorDevice):
         return self._coordinator.data[POWERWALL_API_SITEMASTER].connected_to_tesla
 
 
-class PowerWallGridStatusSensor(PowerWallEntity, BinarySensorDevice):
+class PowerWallGridStatusSensor(PowerWallEntity, BinarySensorEntity):
     """Representation of an Powerwall grid status sensor."""
 
     @property
@@ -137,7 +125,7 @@ class PowerWallGridStatusSensor(PowerWallEntity, BinarySensorDevice):
         return self._coordinator.data[POWERWALL_API_GRID_STATUS] == GridStatus.CONNECTED
 
 
-class PowerWallChargingStatusSensor(PowerWallEntity, BinarySensorDevice):
+class PowerWallChargingStatusSensor(PowerWallEntity, BinarySensorEntity):
     """Representation of an Powerwall charging status sensor."""
 
     @property
